@@ -1,13 +1,7 @@
 import bpy
 from random import *
 from math import *
-
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
-bpy.context.scene.render.engine = 'CYCLES'
-for material in bpy.data.materials:
-    material.user_clear()
-    bpy.data.materials.remove(material)
+import sys
 
 MINIMUM_BUILDING_SIZE = .2
 MAXIMUM_BUILDING_SIZE = 10
@@ -109,6 +103,13 @@ def determine_building_height(x, y, center_x, center_y, size_of_city):
     
 
 def main():
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete()
+    bpy.context.scene.render.engine = 'CYCLES'
+    for material in bpy.data.materials:
+        material.user_clear()
+        bpy.data.materials.remove(material)
+
     size_of_city = 16
     center_x=randint(-size_of_city//5,size_of_city//5)
     center_y=randint(-size_of_city//5,size_of_city//5)
@@ -122,8 +123,6 @@ def main():
     
     bpy.ops.object.light_add(type='POINT', radius=10, location=(sun_x, sun_y, 20), scale=(1, 1, 1))
     bpy.context.object.data.energy = 10000
-    
-
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
@@ -149,7 +148,7 @@ def main():
         c1 = 1-fixed_color_1
         c2 = 1-fixed_color_2
         c3 = uniform(0,1)
-    elif  decider == 2:
+    elif decider == 2:
         c1 = 1-fixed_color_1
         c2 = uniform(0,1)
         c3 = 1-fixed_color_2
@@ -177,9 +176,8 @@ def main():
             
             building(i, j, center_x, center_y, size_of_city, c1, c2, c3)
 
-
            
 if __name__ == "__main__":  
     main()
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_out/o" + sys.argv[4]
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
-    
