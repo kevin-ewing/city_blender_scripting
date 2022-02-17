@@ -3,10 +3,10 @@ from random import *
 from math import *
 import sys
 
-SIZE_OF_CITY = 30
+SIZE_OF_CITY = 45
 CENTER_FACTOR = 5
 
-#Blender will update the view with each primitive addition, we do not want that. Instead lets block it from updating the view until the end
+#Blender will update the view with each primative addition, we do not want that, instead lets block it from updating the view until the end
 #https://blender.stackexchange.com/questions/7358/python-performance-with-blender-operators
 def run_ops_without_view_layer_update(func):
     from bpy.ops import _BPyOpsSubModOp
@@ -62,7 +62,10 @@ def main():
         if n.type == 'BSDF_PRINCIPLED':
             n.inputs["Metallic"].default_value = 0.65
             n.inputs["Roughness"].default_value = 0.15
-    bpy.ops.mesh.primitive_plane_add(size=2*SIZE_OF_CITY, enter_editmode=False, align='WORLD', location=(0, 0, 0), rotation=(0, 0, camera_angle_z), scale=(2, 1, 1))
+#    bpy.ops.mesh.primitive_plane_add(size=2*SIZE_OF_CITY, enter_editmode=False, align='WORLD', location=(0, 0, 0), , scale=(2, 1, 1))
+    
+    
+    bpy.ops.mesh.primitive_cube_add(location = (0, 0, -1), rotation=(0, 0, camera_angle_z), scale = (2*SIZE_OF_CITY, SIZE_OF_CITY, 1))
     bpy.context.object.data.materials.append(mat)
     
     #Determining which way the palette will be "stuck"
@@ -136,7 +139,7 @@ def building(x, y, center_x, center_y,  c1, c2, c3):
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
     distance = SIZE_OF_CITY - sqrt((x - center_x)**2 + (y - center_y)**2)
     minimum = (distance ** .3) / 3
-    maximum = (distance** 1.2)/5
+    maximum = (distance** 1.2)/10
     return uniform(minimum, maximum)
      
 def pointed_building(x, y, height, mat):
@@ -226,5 +229,5 @@ def small_building(x, y, height, mat):
            
 if __name__ == "__main__":  
     run_ops_without_view_layer_update(main)
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/o" + sys.argv[4]
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_out/o" + sys.argv[4]
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
