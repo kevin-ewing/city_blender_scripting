@@ -1,7 +1,7 @@
 To run `gen_all.sh`
 
 ```
-$ ./gen_all.sh {cout}
+$ ./gen_all.sh {count}
 ```
 For example:
 

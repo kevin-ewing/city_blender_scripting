@@ -6,7 +6,7 @@ import sys
 SIZE_OF_CITY = 45
 CENTER_FACTOR = 5
 
-#Blender will update the view with each primative addition, we do not want that, instead lets block it from updating the view until the end
+#Blender will update the view with each primitive addition, we do not want that, instead lets block it from updating the view until the end
 #https://blender.stackexchange.com/questions/7358/python-performance-with-blender-operators
 def run_ops_without_view_layer_update(func):
     from bpy.ops import _BPyOpsSubModOp
