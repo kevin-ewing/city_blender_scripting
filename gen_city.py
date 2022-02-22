@@ -3,10 +3,11 @@ from random import *
 from math import *
 import sys
 
-SIZE_OF_CITY = 45
+SIZE_OF_CITY = 60
 CENTER_FACTOR = 5
+MAX_BRIGHT = 13
 
-#Blender will update the view with each primitive addition, we do not want that, instead lets block it from updating the view until the end
+#Blender will update the view with each primative addition, we do not want that, instead lets block it from updating the view until the end
 #https://blender.stackexchange.com/questions/7358/python-performance-with-blender-operators
 def run_ops_without_view_layer_update(func):
     from bpy.ops import _BPyOpsSubModOp
@@ -41,17 +42,23 @@ def main():
     #Randomly creates the Sun somwhere in the scene
     sun_x=uniform(-SIZE_OF_CITY,SIZE_OF_CITY)
     sun_y=uniform(-SIZE_OF_CITY,SIZE_OF_CITY)
-    bpy.ops.object.light_add(type='POINT', radius=10, location=(sun_x, sun_y, 20), scale=(1, 1, 1))
-    bpy.context.object.data.energy = 10000
+    sun_z=uniform(1,30)
+    sun_angle_z = pi - atan(sun_x / sun_y)
+    sun_angle_x = atan(sun_x / sun_z)
+    sun_strength = uniform(1,MAX_BRIGHT)
+    bpy.ops.object.light_add(type='SUN', radius=1, location=(sun_x, sun_y, sun_z), rotation=(sun_angle_x, 0, sun_angle_z), scale=(1, 1, 1))
+    bpy.context.object.data.energy = sun_strength
+
     
     #Randomly places the Camera in the first quadrant of the scene
-    camera_x=uniform(1.1*SIZE_OF_CITY,2*SIZE_OF_CITY)
-    camera_y=uniform(1.1*SIZE_OF_CITY,2*SIZE_OF_CITY)
-    camera_z=uniform(SIZE_OF_CITY/2,SIZE_OF_CITY)
+    camera_distance=uniform(1.4*SIZE_OF_CITY,2.3*SIZE_OF_CITY)
+    camera_x=uniform(0,camera_distance)
+    camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
+    camera_z=uniform(SIZE_OF_CITY/10,SIZE_OF_CITY/2)
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
-    camera_angle_x = pi/10 + atan(camera_x / camera_z)
+    camera_angle_x = atan(camera_distance / (camera_z-3))
     bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(camera_x, camera_y, camera_z), rotation=(camera_angle_x, 0, camera_angle_z), scale=(1, 1, 1))
     bpy.context.scene.camera = bpy.context.object
 
@@ -62,10 +69,8 @@ def main():
         if n.type == 'BSDF_PRINCIPLED':
             n.inputs["Metallic"].default_value = 0.65
             n.inputs["Roughness"].default_value = 0.15
-#    bpy.ops.mesh.primitive_plane_add(size=2*SIZE_OF_CITY, enter_editmode=False, align='WORLD', location=(0, 0, 0), , scale=(2, 1, 1))
     
-    
-    bpy.ops.mesh.primitive_cube_add(location = (0, 0, -1), rotation=(0, 0, camera_angle_z), scale = (2*SIZE_OF_CITY, SIZE_OF_CITY, 1))
+    bpy.ops.mesh.primitive_cube_add(location = (0, 0, -1), rotation=(0, 0, camera_angle_z), scale = (3*SIZE_OF_CITY, 3*SIZE_OF_CITY, 1))
     bpy.context.object.data.materials.append(mat)
     
     #Determining which way the palette will be "stuck"
@@ -87,7 +92,8 @@ def main():
         c3 = 1-fixed_color_2
 
     #Sets world color 
-    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (c1, c2, c3, 1)
+    world_strength = uniform(0, sun_strength/MAX_BRIGHT)
+    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (c1, c2, c3, world_strength)
     
     #Generate a new random color in line with the palette and then create a building
     for i in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
@@ -139,8 +145,12 @@ def building(x, y, center_x, center_y,  c1, c2, c3):
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
     distance = SIZE_OF_CITY - sqrt((x - center_x)**2 + (y - center_y)**2)
     minimum = (distance ** .3) / 3
-    maximum = (distance** 1.2)/10
-    return uniform(minimum, maximum)
+    maximum = (distance** 1.3)/10
+    choice = uniform(minimum, maximum) - 10
+    if choice < 0:
+        return minimum + uniform(-.5, 1.)
+    else:
+        return choice
      
 def pointed_building(x, y, height, mat):
     bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.45, .45, height))
