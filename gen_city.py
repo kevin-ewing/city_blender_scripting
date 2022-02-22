@@ -1,13 +1,24 @@
 import bpy
 from random import *
 from math import *
+from dataclasses import dataclass
+from array import *
 import sys
 
 SIZE_OF_CITY = 60
 CENTER_FACTOR = 5
 MAX_BRIGHT = 13
 
-#Blender will update the view with each primative addition, we do not want that, instead lets block it from updating the view until the end
+
+@dataclass
+class Building:
+    x: float
+    y: float
+    height: float
+    tier_threshold: float
+
+
+#Blender will update the view with each primitive addition, we do not want that, instead lets block it from updating the view until the end
 #https://blender.stackexchange.com/questions/7358/python-performance-with-blender-operators
 def run_ops_without_view_layer_update(func):
     from bpy.ops import _BPyOpsSubModOp
@@ -26,6 +37,7 @@ def main():
     Main function
         clears scene, sets conditions, calls grid of building()
     '''
+    city_plan = []
 
     #Clearing all objects and materials from the prior scene
     bpy.ops.object.select_all(action='SELECT')
@@ -38,27 +50,45 @@ def main():
     center_coord = SIZE_OF_CITY//CENTER_FACTOR
     center_x=randint(-center_coord, center_coord)
     center_y=randint(-center_coord, center_coord)
-    
-    #Randomly creates the Sun somwhere in the scene
-    sun_x=uniform(-SIZE_OF_CITY,SIZE_OF_CITY)
-    sun_y=uniform(-SIZE_OF_CITY,SIZE_OF_CITY)
-    sun_z=uniform(1,30)
+
+    sun_distance=2*SIZE_OF_CITY
+    sun_x=uniform(-sun_distance,sun_distance)
+    sun_decider = randint(0,1)
+    if sun_decider:
+        sun_y=sqrt(pow(sun_distance,2)-pow(sun_x,2))
+    else:
+        sun_y=-sqrt(pow(sun_distance,2)-pow(sun_x,2))
+    sun_z=uniform(1,50)
+
+    #Adds Sun
     sun_angle_z = pi - atan(sun_x / sun_y)
-    sun_angle_x = atan(sun_x / sun_z)
+    if sun_decider:
+        sun_angle_x = atan(sun_distance / (sun_z))
+    else:
+        sun_angle_x = -atan(sun_distance / (sun_z))
     sun_strength = uniform(1,MAX_BRIGHT)
     bpy.ops.object.light_add(type='SUN', radius=1, location=(sun_x, sun_y, sun_z), rotation=(sun_angle_x, 0, sun_angle_z), scale=(1, 1, 1))
     bpy.context.object.data.energy = sun_strength
-
+    
+    sun_mat = bpy.data.materials.new(name="sun_mat")
+    sun_mat.use_nodes = True
+    for n in sun_mat.node_tree.nodes:
+        if n.type == 'BSDF_PRINCIPLED':
+            n.inputs["Emission Strength"].default_value = 10
+            n.inputs["Emission"].default_value = (1, 1, 1, 1)
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=5, radius=5, enter_editmode=False, align='WORLD', location=(sun_x, sun_y, sun_z), scale=(1, 1, 1))
+    bpy.context.object.data.materials.append(sun_mat)
+    bpy.context.object.visible_shadow = False
     
     #Randomly places the Camera in the first quadrant of the scene
-    camera_distance=uniform(1.4*SIZE_OF_CITY,2.3*SIZE_OF_CITY)
+    camera_distance=uniform(1.2*SIZE_OF_CITY,1.6*SIZE_OF_CITY)
     camera_x=uniform(0,camera_distance)
     camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
     camera_z=uniform(SIZE_OF_CITY/10,SIZE_OF_CITY/2)
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
-    camera_angle_x = atan(camera_distance / (camera_z-3))
+    camera_angle_x = atan(camera_distance / (camera_z-5))
     bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(camera_x, camera_y, camera_z), rotation=(camera_angle_x, 0, camera_angle_z), scale=(1, 1, 1))
     bpy.context.scene.camera = bpy.context.object
 
@@ -97,54 +127,82 @@ def main():
     
     #Generate a new random color in line with the palette and then create a building
     for i in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
+        temp = []
         for j in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
-            if decider == 1:
-                c1 = fixed_color_1
-                c2 = fixed_color_2
-                c3 = uniform(0,1)
-            elif  decider == 2:
-                c1 = fixed_color_1
-                c2 = uniform(0,1)
-                c3 = fixed_color_2
-            else:
-                c1 = uniform(0,1)
-                c2 = fixed_color_1
-                c3 = fixed_color_2
-            
-            building(i, j, center_x, center_y, c1, c2, c3)
+            temp.append(plan_building(i, j, center_x, center_y))
+        city_plan.append(temp)
 
-def building(x, y, center_x, center_y,  c1, c2, c3):
+    build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2)
+
+def plan_building(x, y, center_x, center_y):
     height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
+    tier_threshold = randint(0, 20)*height
 
-    mat = bpy.data.materials.new(name="test_mat")
-    mat.diffuse_color = (c1, c2, c3, 1.0)
-        
-    tier_threshold = randint(0, 100)*height
-    if tier_threshold > 345:
-        pointed_building(x, y, height, mat)
-    elif tier_threshold > 265:
-        tiered_building(x, y, height, mat)
-    elif tier_threshold > 240:
-        striped_building(x, y, height, mat)
-    elif tier_threshold > 230:
-        spired_building(x, y, height, mat)
-    elif tier_threshold > 180:
-        crossed_building(x, y, height, mat)
-    elif tier_threshold > 120:
-        glass_building(x, y, height, c1, c2, c3)
-    elif tier_threshold > 100:
-        l_building(x, y, height, mat)
-    elif tier_threshold > 90:
-        pass
-    elif  tier_threshold < 10:
-        small_building(x, y, height, mat)
+    return Building(x, y, height, tier_threshold)
+
+def build_mat(decider, fixed_color_1, fixed_color_2, shiny):
+    if decider == 1:
+        c1 = fixed_color_1
+        c2 = fixed_color_2
+        c3 = uniform(0,1)
+    elif  decider == 2:
+        c1 = fixed_color_1
+        c2 = uniform(0,1)
+        c3 = fixed_color_2
     else:
-        bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.40, .40, height))
-        bpy.context.object.data.materials.append(mat)
+        c1 = uniform(0,1)
+        c2 = fixed_color_1
+        c3 = fixed_color_2
+
+    if shiny:
+        built_mat = bpy.data.materials.new(name=str(c1+c2+c3))
+        built_mat.use_nodes = True
+        for n in built_mat.node_tree.nodes:
+            if n.type == 'BSDF_PRINCIPLED':
+                n.inputs["Metallic"].default_value = 0.5
+                n.inputs["Roughness"].default_value = 0.05
+                n.inputs["Base Color"].default_value = (c1, c2, c3, 1.0)
+    else:
+        built_mat = bpy.data.materials.new(name="mat")
+        built_mat.diffuse_color = (c1, c2, c3, 1.0)
+
+    return built_mat
+
+def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
+    th_max = 0
+    for cols in city_plan:
+        for row in cols:
+            if row.tier_threshold > th_max:
+                th_max = row.tier_threshold
+
+    for cols in city_plan:
+        for row in cols:
+            if row.tier_threshold > (8.5 * (th_max/10)):
+                pointed_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (7 * (th_max/10)):
+                tiered_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (6 * (th_max/10)):
+                striped_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (5 * (th_max/10)):
+                spired_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (4 * (th_max/10)):
+                crossed_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (3 * (th_max/10)):
+                glass_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 1))
+            elif row.tier_threshold > (2 * (th_max/10)):
+                l_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold > (1 * (th_max/10)):
+                pass
+            elif  row.tier_threshold < 10:
+                small_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            else:
+                bpy.ops.mesh.primitive_cube_add(location = (row.x, row.y, row.height), scale = (.40, .40, row.height))
+                bpy.context.object.data.materials.append(build_mat(decider, fixed_color_1, fixed_color_2, 0))
+
 
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
     distance = SIZE_OF_CITY - sqrt((x - center_x)**2 + (y - center_y)**2)
-    minimum = (distance ** .3) / 3
+    minimum = (distance ** .3) / (SIZE_OF_CITY/10)
     maximum = (distance** 1.3)/10
     choice = uniform(minimum, maximum) - 10
     if choice < 0:
@@ -208,16 +266,9 @@ def crossed_building(x, y, height, mat):
         bpy.ops.mesh.primitive_cube_add(location = (x-.35+(beam_offset*i), y, height), scale = (.4/(3*number_beams), .4, height))
         bpy.context.object.data.materials.append(mat)
 
-def glass_building(x, y, height, c1, c2, c3):
-    reflective_mat = bpy.data.materials.new(name=str(c1+c2+c3))
-    reflective_mat.use_nodes = True
-    for n in reflective_mat.node_tree.nodes:
-        if n.type == 'BSDF_PRINCIPLED':
-            n.inputs["Metallic"].default_value = 0.4
-            n.inputs["Roughness"].default_value = 0.1
-            n.inputs["Base Color"].default_value = (c1, c2, c3, 1.0)
+def glass_building(x, y, height, mat):
     bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.40, .40, height)) 
-    bpy.context.object.data.materials.append(reflective_mat)
+    bpy.context.object.data.materials.append(mat)
 
 def l_building(x, y, height, mat):
     bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.39, .39, height))
@@ -239,5 +290,5 @@ def small_building(x, y, height, mat):
            
 if __name__ == "__main__":  
     run_ops_without_view_layer_update(main)
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_output/o" + sys.argv[4]
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[4]
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)

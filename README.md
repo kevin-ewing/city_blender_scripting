@@ -1,12 +1,12 @@
 To run `gen_all.sh`
 
 ```
-$ ./gen_all.sh {count}
+$ ./gen_all.sh {output start} {output end}
 ```
 For example:
 
 ```
-$ ./gen_all.sh 100
+$ ./gen_all.sh 0 50
 ```
 
 Example Outputs:
