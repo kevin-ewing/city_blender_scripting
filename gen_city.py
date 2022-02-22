@@ -239,5 +239,5 @@ def small_building(x, y, height, mat):
            
 if __name__ == "__main__":  
     run_ops_without_view_layer_update(main)
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_out/o" + sys.argv[4]
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_output/o" + sys.argv[4]
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)

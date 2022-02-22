@@ -1,4 +1,3 @@
 .DS_Store
 *.blend1
-*.png
-sample_out/
+output/
