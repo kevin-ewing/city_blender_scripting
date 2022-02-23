@@ -1,4 +1,4 @@
-range=`expr ${2} - ${1}`
+range=`expr ${2} - ${1} + 1`
 count=${1}
 
 

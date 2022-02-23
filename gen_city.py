@@ -81,14 +81,14 @@ def main():
     bpy.context.object.visible_shadow = False
     
     #Randomly places the Camera in the first quadrant of the scene
-    camera_distance=uniform(1.2*SIZE_OF_CITY,1.6*SIZE_OF_CITY)
+    camera_distance=uniform(1.5*SIZE_OF_CITY,1.9*SIZE_OF_CITY)
     camera_x=uniform(0,camera_distance)
     camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
     camera_z=uniform(SIZE_OF_CITY/10,SIZE_OF_CITY/2)
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
-    camera_angle_x = atan(camera_distance / (camera_z-5))
+    camera_angle_x = atan(camera_distance / (camera_z - 5))
     bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(camera_x, camera_y, camera_z), rotation=(camera_angle_x, 0, camera_angle_z), scale=(1, 1, 1))
     bpy.context.scene.camera = bpy.context.object
 
@@ -202,9 +202,9 @@ def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
 
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
     distance = SIZE_OF_CITY - sqrt((x - center_x)**2 + (y - center_y)**2)
-    minimum = (distance ** .3) / (SIZE_OF_CITY/10)
-    maximum = (distance** 1.3)/10
-    choice = uniform(minimum, maximum) - 10
+    minimum = (distance ** 0.25) / (SIZE_OF_CITY/10)
+    maximum = (distance ** 1.25)/ (SIZE_OF_CITY/6)
+    choice = uniform(minimum, maximum) - (SIZE_OF_CITY/10)
     if choice < 0:
         return minimum + uniform(-.5, 1.)
     else:
