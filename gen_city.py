@@ -1,12 +1,14 @@
 import bpy
+import time
 from random import *
 from math import *
 from dataclasses import dataclass
 from array import *
 import sys
 
-SIZE_OF_CITY = 60
+SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
+CENTER_SIZE = 9
 MAX_BRIGHT = 13
 
 
@@ -30,7 +32,7 @@ def run_ops_without_view_layer_update(func):
         func()
     finally:
         _BPyOpsSubModOp._view_layer_update = view_layer_update
-        
+
 
 def main():
     '''
@@ -39,14 +41,21 @@ def main():
     '''
     city_plan = []
 
+    print("Clearing all buildings...")
+    checkpoint = time.time()
+
     #Clearing all objects and materials from the prior scene
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
     bpy.context.scene.render.engine = 'CYCLES'
     for material in bpy.data.materials:
         bpy.data.materials.remove(material)
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+
 
     #Randomly generates the "city center"
+    print("Randomizing center of city and sun...")
     center_coord = SIZE_OF_CITY//CENTER_FACTOR
     center_x=randint(-center_coord, center_coord)
     center_y=randint(-center_coord, center_coord)
@@ -79,9 +88,12 @@ def main():
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=5, radius=5, enter_editmode=False, align='WORLD', location=(sun_x, sun_y, sun_z), scale=(1, 1, 1))
     bpy.context.object.data.materials.append(sun_mat)
     bpy.context.object.visible_shadow = False
-    
+
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+    print("Randomizing camera...")
     #Randomly places the Camera in the first quadrant of the scene
-    camera_distance=uniform(1.5*SIZE_OF_CITY,1.9*SIZE_OF_CITY)
+    camera_distance=uniform(.8*SIZE_OF_CITY,1*SIZE_OF_CITY)
     camera_x=uniform(0,camera_distance)
     camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
     camera_z=uniform(SIZE_OF_CITY/10,SIZE_OF_CITY/2)
@@ -92,6 +104,9 @@ def main():
     bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(camera_x, camera_y, camera_z), rotation=(camera_angle_x, 0, camera_angle_z), scale=(1, 1, 1))
     bpy.context.scene.camera = bpy.context.object
 
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+    print("Creating floor...")
     #Adds floor facing the camera
     mat = bpy.data.materials.new(name="floor")
     mat.use_nodes = True
@@ -103,6 +118,10 @@ def main():
     bpy.ops.mesh.primitive_cube_add(location = (0, 0, -1), rotation=(0, 0, camera_angle_z), scale = (3*SIZE_OF_CITY, 3*SIZE_OF_CITY, 1))
     bpy.context.object.data.materials.append(mat)
     
+
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+    print("Creating color palette...")
     #Determining which way the palette will be "stuck"
     decider = randint(0,2)
     fixed_color_1 = uniform(0,1)
@@ -124,16 +143,24 @@ def main():
     #Sets world color 
     world_strength = uniform(0, sun_strength/MAX_BRIGHT)
     bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (c1, c2, c3, world_strength)
-    
+
     #Generate a new random color in line with the palette and then create a building
+
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+    print("Generating building plans...")
     for i in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
         temp = []
         for j in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
             temp.append(plan_building(i, j, center_x, center_y))
         city_plan.append(temp)
 
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+    print("Building all buildings...")
     build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2)
-
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
 def plan_building(x, y, center_x, center_y):
     height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
     tier_threshold = randint(0, 20)*height
@@ -201,14 +228,10 @@ def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
 
 
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
-    distance = SIZE_OF_CITY - sqrt((x - center_x)**2 + (y - center_y)**2)
+    distance = sqrt((x - center_x)**2 + (y - center_y)**2)
     minimum = (distance ** 0.25) / (SIZE_OF_CITY/10)
-    maximum = (distance ** 1.25)/ (SIZE_OF_CITY/6)
-    choice = uniform(minimum, maximum) - (SIZE_OF_CITY/10)
-    if choice < 0:
-        return minimum + uniform(-.5, 1.)
-    else:
-        return choice
+    maximum = 9 - (8 / (1 + pow(1.3, (-1.4 * (distance - CENTER_SIZE)))))
+    return uniform(minimum, maximum)
      
 def pointed_building(x, y, height, mat):
     bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.45, .45, height))
@@ -289,6 +312,14 @@ def small_building(x, y, height, mat):
         
            
 if __name__ == "__main__":  
+    start_checkpoint = time.time()
     run_ops_without_view_layer_update(main)
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[4]
+    print("Rendering...")
+    checkpoint = time.time()
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_output/o" + sys.argv[7]
+    bpy.context.scene.cycles.samples = 1024
+    bpy.context.scene.render.resolution_x = 3840
+    bpy.context.scene.render.resolution_y = 1644
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    print("Total Time: --- %s seconds ---\n"% (time.time() - start_checkpoint))
