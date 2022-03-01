@@ -6,18 +6,24 @@ from dataclasses import dataclass
 from array import *
 import sys
 
+RENDER = True
+
 #City VARS
 SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
 CENTER_SIZE = 9
 MAX_BRIGHT = 13
+RIVER_CURVE_FACTOR = .1
+RIVER_SIZE = 3
 
 #Render VARS
-RENDER_SIZE_FACTOR = 2
-RENDER_SAMPLE_FACTOR = 1
+RENDER_SIZE_FACTOR = .25
+RENDER_SAMPLE_FACTOR = .5
+
 
 @dataclass
 class Building:
+    exists: bool
     x: float
     y: float
     height: float
@@ -100,7 +106,7 @@ def main():
     camera_distance=uniform(.8*SIZE_OF_CITY,1*SIZE_OF_CITY)
     camera_x=uniform(0,camera_distance)
     camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
-    camera_z=uniform(SIZE_OF_CITY/10,35)
+    camera_z=uniform(5,20)
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
@@ -161,17 +167,75 @@ def main():
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
     print("Building all buildings...")
+    carve_park(city_plan)
+    carve_river(city_plan)
     build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
 
     setup_composite()
 
-    # bpy.context.scene.use_nodes = True
-    # bpy.data.scenes.node_tree.nodes.new(type = "CompositorNodeGlare")
-    # bpy.data.scenes["Scene"].node_tree.nodes["Glare"].iterations = 3
-    # bpy.data.scenes.node_tree.links.new(bpy.data.scenes["Scene"].node_tree.nodes["Render Layers"].outputs[0], bpy.data.scenes["Scene"].node_tree.nodes["Glare"].inputs[0])
-    # bpy.data.scenes.node_tree.links.new(bpy.data.scenes["Scene"].node_tree.nodes["Scene"].outputs[0], bpy.data.scenes["Scene"].node_tree.nodes["Composite"].inputs[0])
+
+def carve_park(city_plan):
+    """
+    Carves out a park in the city
+    """
+    center = randint(-SIZE_OF_CITY//2, SIZE_OF_CITY)
+    height = randint(0, 12)
+    width = randint(0, 12)
+    for i in range (center + (-height//2), center + (height//2)):
+        for j in range (center + (-width//2), center + (width//2)):
+            try:
+                city_plan[i][j].exists = False
+            except IndexError:
+                pass
+
+def carve_river(city_plan):
+    """
+    Carves out a river through the city
+    """
+    edge = False
+    direction = 0
+    for cols in city_plan:
+        rand_start = randint(0, len(cols))
+    
+    curr_x = rand_start
+    curr_y = 0
+
+    
+    while edge == False:
+        dir_change = uniform(0,1)
+        if dir_change < RIVER_CURVE_FACTOR:
+            direction = (direction - 1) % 4
+        elif dir_change < RIVER_CURVE_FACTOR * 2:
+            direction = (direction + 1) % 4
+        try: 
+            if direction == 0:
+                curr_y += 1
+            elif direction == 1:
+                curr_x += 1
+            elif direction == 2:
+                curr_y -= 1
+            else:
+                curr_x -= 1
+
+            
+            #clear around
+            try:
+                for i in range(-RIVER_SIZE//2, RIVER_SIZE//2):
+                    for j in range(-RIVER_SIZE//2, RIVER_SIZE//2):
+                        city_plan[curr_x + i][curr_y + j].exists = False
+            except IndexError:
+                pass
+
+            #If actual plan is at edge then we do exit loop
+            city_plan[curr_x][curr_y].exists = False
+
+        except IndexError:
+            edge = True
+
+
+    
 
 
 def setup_composite():
@@ -207,7 +271,7 @@ def plan_building(x, y, center_x, center_y):
     height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
     tier_threshold = randint(0, 20)*height
 
-    return Building(x, y, height, tier_threshold)
+    return Building(True, x, y, height, tier_threshold)
 
 def build_mat(decider, fixed_color_1, fixed_color_2, shiny):
     if decider == 1:
@@ -246,7 +310,9 @@ def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
 
     for cols in city_plan:
         for row in cols:
-            if row.tier_threshold > (8.5 * (th_max/10)):
+            if row.exists == False:
+                pass
+            elif row.tier_threshold > (8.5 * (th_max/10)):
                 pointed_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
             elif row.tier_threshold > (7 * (th_max/10)):
                 tiered_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
@@ -351,17 +417,18 @@ def small_building(x, y, height, mat):
     bpy.context.object.data.materials.append(mat)
     bpy.ops.mesh.primitive_cube_add(location = (x, y + (.2 * y_orient), height), scale = (.4, .2, height))
     bpy.context.object.data.materials.append(mat)
-        
            
 if __name__ == "__main__":  
     start_checkpoint = time.time()
     run_ops_without_view_layer_update(main)
-    print("Rendering...")
-    checkpoint = time.time()
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[7]
-    bpy.context.scene.cycles.samples = 1024 * RENDER_SAMPLE_FACTOR
-    bpy.context.scene.render.resolution_x = 3840 * RENDER_SIZE_FACTOR
-    bpy.context.scene.render.resolution_y = 1644 * RENDER_SIZE_FACTOR
-    bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    print("Total Time: --- %s seconds ---\n"% (time.time() - start_checkpoint))
+    if RENDER:
+        print("Rendering...")
+        checkpoint = time.time()
+        bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[7]
+        bpy.context.scene.cycles.samples = 1024 * RENDER_SAMPLE_FACTOR
+        bpy.context.scene.render.resolution_x = 3840 * RENDER_SIZE_FACTOR
+        bpy.context.scene.render.resolution_y = 1644 * RENDER_SIZE_FACTOR
+        bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
+        print("--- %s seconds ---\n" % (time.time() - checkpoint))
+        print("Total Time: --- %s seconds ---\n"% (time.time() - start_checkpoint))
+
