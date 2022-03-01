@@ -6,11 +6,15 @@ from dataclasses import dataclass
 from array import *
 import sys
 
+#City VARS
 SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
 CENTER_SIZE = 9
 MAX_BRIGHT = 13
 
+#Render VARS
+RENDER_SIZE_FACTOR = 2
+RENDER_SAMPLE_FACTOR = 1
 
 @dataclass
 class Building:
@@ -96,7 +100,7 @@ def main():
     camera_distance=uniform(.8*SIZE_OF_CITY,1*SIZE_OF_CITY)
     camera_x=uniform(0,camera_distance)
     camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
-    camera_z=uniform(SIZE_OF_CITY/10,SIZE_OF_CITY/2)
+    camera_z=uniform(SIZE_OF_CITY/10,35)
 
     #Adds Camera
     camera_angle_z = pi - atan(camera_x / camera_y)
@@ -143,9 +147,8 @@ def main():
     #Sets world color 
     world_strength = uniform(0, sun_strength/MAX_BRIGHT)
     bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (c1, c2, c3, world_strength)
-
+    
     #Generate a new random color in line with the palette and then create a building
-
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
     print("Generating building plans...")
@@ -161,6 +164,45 @@ def main():
     build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
+
+    setup_composite()
+
+    # bpy.context.scene.use_nodes = True
+    # bpy.data.scenes.node_tree.nodes.new(type = "CompositorNodeGlare")
+    # bpy.data.scenes["Scene"].node_tree.nodes["Glare"].iterations = 3
+    # bpy.data.scenes.node_tree.links.new(bpy.data.scenes["Scene"].node_tree.nodes["Render Layers"].outputs[0], bpy.data.scenes["Scene"].node_tree.nodes["Glare"].inputs[0])
+    # bpy.data.scenes.node_tree.links.new(bpy.data.scenes["Scene"].node_tree.nodes["Scene"].outputs[0], bpy.data.scenes["Scene"].node_tree.nodes["Composite"].inputs[0])
+
+
+def setup_composite():
+    #https://blender.stackexchange.com/questions/19500/controling-compositor-by-python
+    # switch on nodes and get reference
+    bpy.context.scene.use_nodes = True
+    tree = bpy.context.scene.node_tree
+
+    # clear default nodes
+    for node in tree.nodes:
+        tree.nodes.remove(node)
+
+    # create input image node
+    image_node = tree.nodes.new(type='CompositorNodeRLayers')
+
+    # create glare node
+    glare_node = tree.nodes.new('CompositorNodeGlare')
+    glare_node.glare_type = "FOG_GLOW"
+    glare_node.size = 5
+
+    # create output node
+    comp_node = tree.nodes.new('CompositorNodeComposite')
+
+    # link nodes
+    links = tree.links
+    links.new(image_node.outputs[0], glare_node.inputs[0])
+    links.new(glare_node.outputs[0], comp_node.inputs[0])
+
+
+
+
 def plan_building(x, y, center_x, center_y):
     height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
     tier_threshold = randint(0, 20)*height
@@ -316,10 +358,10 @@ if __name__ == "__main__":
     run_ops_without_view_layer_update(main)
     print("Rendering...")
     checkpoint = time.time()
-    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/sample_output/o" + sys.argv[7]
-    bpy.context.scene.cycles.samples = 1024
-    bpy.context.scene.render.resolution_x = 3840
-    bpy.context.scene.render.resolution_y = 1644
+    bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[7]
+    bpy.context.scene.cycles.samples = 1024 * RENDER_SAMPLE_FACTOR
+    bpy.context.scene.render.resolution_x = 3840 * RENDER_SIZE_FACTOR
+    bpy.context.scene.render.resolution_y = 1644 * RENDER_SIZE_FACTOR
     bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     print("Total Time: --- %s seconds ---\n"% (time.time() - start_checkpoint))
