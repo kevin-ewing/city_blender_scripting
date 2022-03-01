@@ -1,3 +1,4 @@
+from re import S
 import bpy
 import time
 from random import *
@@ -5,6 +6,7 @@ from math import *
 from dataclasses import dataclass
 from array import *
 import sys
+from colorsys import hsv_to_rgb
 
 RENDER = True
 
@@ -13,12 +15,12 @@ SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
 CENTER_SIZE = 9
 MAX_BRIGHT = 13
-RIVER_CURVE_FACTOR = .1
-RIVER_SIZE = 3
+RIVER_CURVE_FACTOR = .25
+RIVER_SIZE = 5
 
 #Render VARS
-RENDER_SIZE_FACTOR = .25
-RENDER_SAMPLE_FACTOR = .5
+RENDER_SIZE_FACTOR = 1
+RENDER_SAMPLE_FACTOR = .25
 
 
 @dataclass
@@ -62,7 +64,6 @@ def main():
         bpy.data.materials.remove(material)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
-
 
     #Randomly generates the "city center"
     print("Randomizing center of city and sun...")
@@ -132,27 +133,14 @@ def main():
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
     print("Creating color palette...")
-    #Determining which way the palette will be "stuck"
-    decider = randint(0,2)
-    fixed_color_1 = uniform(0,1)
-    fixed_color_2 = uniform(0,1)
     
-    if decider == 1:
-        c1 = 1-fixed_color_1
-        c2 = 1-fixed_color_2
-        c3 = uniform(0,1)
-    elif decider == 2:
-        c1 = 1-fixed_color_1
-        c2 = uniform(0,1)
-        c3 = 1-fixed_color_2
-    else:
-        c1 = uniform(0,1)
-        c2 = 1-fixed_color_1
-        c3 = 1-fixed_color_2
+    world_fixed_color = uniform(0.4,0.85)
+    world_saturation = uniform(0.1, 0.5)
+    world_value = uniform(0.2, 1)
 
     #Sets world color 
     world_strength = uniform(0, sun_strength/MAX_BRIGHT)
-    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (c1, c2, c3, world_strength)
+    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (hsv_to_rgb(world_fixed_color, world_saturation, world_value)[0], hsv_to_rgb(world_fixed_color, world_saturation, world_value)[1],hsv_to_rgb(world_fixed_color, world_saturation, world_value)[2], world_strength)
     
     #Generate a new random color in line with the palette and then create a building
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
@@ -167,9 +155,14 @@ def main():
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
     print("Building all buildings...")
-    carve_park(city_plan)
     carve_river(city_plan)
-    build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2)
+
+
+    fixed_color = uniform(0.4,0.85)
+    saturation = uniform(0.1, 0.5)
+    value = uniform(0.2, 1)
+
+    build_all_buildings(city_plan, fixed_color, saturation, value)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
 
@@ -199,8 +192,8 @@ def carve_river(city_plan):
     for cols in city_plan:
         rand_start = randint(0, len(cols))
     
-    curr_x = rand_start
-    curr_y = 0
+    current_x = rand_start
+    current_y = 0
 
     
     while edge == False:
@@ -211,25 +204,25 @@ def carve_river(city_plan):
             direction = (direction + 1) % 4
         try: 
             if direction == 0:
-                curr_y += 1
+                current_y += 1
             elif direction == 1:
-                curr_x += 1
+                current_x += 1
             elif direction == 2:
-                curr_y -= 1
+                current_y -= 1
             else:
-                curr_x -= 1
+                current_x -= 1
 
             
             #clear around
             try:
                 for i in range(-RIVER_SIZE//2, RIVER_SIZE//2):
                     for j in range(-RIVER_SIZE//2, RIVER_SIZE//2):
-                        city_plan[curr_x + i][curr_y + j].exists = False
+                        city_plan[current_x + i][current_y + j].exists = False
             except IndexError:
                 pass
 
             #If actual plan is at edge then we do exit loop
-            city_plan[curr_x][curr_y].exists = False
+            city_plan[current_x][current_y].exists = False
 
         except IndexError:
             edge = True
@@ -273,35 +266,44 @@ def plan_building(x, y, center_x, center_y):
 
     return Building(True, x, y, height, tier_threshold)
 
-def build_mat(decider, fixed_color_1, fixed_color_2, shiny):
-    if decider == 1:
-        c1 = fixed_color_1
-        c2 = fixed_color_2
-        c3 = uniform(0,1)
-    elif  decider == 2:
-        c1 = fixed_color_1
-        c2 = uniform(0,1)
-        c3 = fixed_color_2
-    else:
-        c1 = uniform(0,1)
-        c2 = fixed_color_1
-        c3 = fixed_color_2
+def build_mat(fixed_color, saturation, value, shiny):
+
+    color_addition = uniform(-0.25, 0.25)
+    varied_color = fixed_color + color_addition
+    if varied_color > 1:
+        varied_color - 1
+    if varied_color < 0:
+        varied_color + 1
+
+    sat_addition = uniform(-0.1, 0.1)
+    varied_saturation = saturation + sat_addition
+    if varied_saturation > 1:
+        varied_saturation - 1
+    if varied_saturation < 0:
+        varied_saturation + 1
+    
+    value_addition = uniform(-0.1, 0.1)
+    varied_value = value + value_addition
+    if varied_value > 1:
+        varied_value - 1
+    if varied_value < 0:
+        varied_value + 1
 
     if shiny:
-        built_mat = bpy.data.materials.new(name=str(c1+c2+c3))
+        built_mat = bpy.data.materials.new(name=str(varied_color+varied_saturation+varied_value))
         built_mat.use_nodes = True
         for n in built_mat.node_tree.nodes:
             if n.type == 'BSDF_PRINCIPLED':
                 n.inputs["Metallic"].default_value = 0.5
                 n.inputs["Roughness"].default_value = 0.05
-                n.inputs["Base Color"].default_value = (c1, c2, c3, 1.0)
+                n.inputs["Base Color"].default_value = (hsv_to_rgb(varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(varied_color, varied_saturation, varied_value)[1],hsv_to_rgb(varied_color, varied_saturation, varied_value)[2], 1.0)
     else:
         built_mat = bpy.data.materials.new(name="mat")
-        built_mat.diffuse_color = (c1, c2, c3, 1.0)
+        built_mat.diffuse_color = (hsv_to_rgb(varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(varied_color, varied_saturation, varied_value)[1],hsv_to_rgb(varied_color, varied_saturation, varied_value)[2], 1.0)
 
     return built_mat
 
-def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
+def build_all_buildings(city_plan, fixed_color, saturation, value):
     th_max = 0
     for cols in city_plan:
         for row in cols:
@@ -312,28 +314,27 @@ def build_all_buildings(city_plan, decider, fixed_color_1, fixed_color_2):
         for row in cols:
             if row.exists == False:
                 pass
-            elif row.tier_threshold > (8.5 * (th_max/10)):
-                pointed_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (7 * (th_max/10)):
-                tiered_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (6 * (th_max/10)):
-                striped_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (5 * (th_max/10)):
-                spired_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (4 * (th_max/10)):
-                crossed_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (3 * (th_max/10)):
-                glass_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 1))
-            elif row.tier_threshold > (2 * (th_max/10)):
-                l_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
-            elif row.tier_threshold > (1 * (th_max/10)):
+            elif row.tier_threshold > (11 * (th_max/15)):
+                pointed_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (9 * (th_max/15)):
+                tiered_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (8 * (th_max/15)):
+                striped_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (7 * (th_max/15)):
+                spired_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (6 * (th_max/15)):
+                crossed_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (5 * (th_max/15)):
+                glass_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 1))
+            elif row.tier_threshold > (4 * (th_max/15)):
+                l_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (2 * (th_max/15)):
                 pass
-            elif  row.tier_threshold < 10:
-                small_building(row.x, row.y, row.height, build_mat(decider, fixed_color_1, fixed_color_2, 0))
+            elif row.tier_threshold < (.8 * (th_max/15)):
+                small_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
             else:
                 bpy.ops.mesh.primitive_cube_add(location = (row.x, row.y, row.height), scale = (.40, .40, row.height))
-                bpy.context.object.data.materials.append(build_mat(decider, fixed_color_1, fixed_color_2, 0))
-
+                bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
 
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
     distance = sqrt((x - center_x)**2 + (y - center_y)**2)
