@@ -15,8 +15,8 @@ SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
 CENTER_SIZE = 9
 MAX_BRIGHT = 13
-RIVER_CURVE_FACTOR = .25
-RIVER_SIZE = 5
+RIVER_CURVE_FACTOR = .20
+RIVER_SIZE = 4
 
 #Render VARS
 RENDER_SIZE_FACTOR = 1
@@ -158,8 +158,8 @@ def main():
     carve_river(city_plan)
 
 
-    fixed_color = uniform(0.4,0.85)
-    saturation = uniform(0.1, 0.5)
+    fixed_color = uniform(0,1)
+    saturation = uniform(0.1, 0.9)
     value = uniform(0.2, 1)
 
     build_all_buildings(city_plan, fixed_color, saturation, value)
@@ -268,7 +268,7 @@ def plan_building(x, y, center_x, center_y):
 
 def build_mat(fixed_color, saturation, value, shiny):
 
-    color_addition = uniform(-0.25, 0.25)
+    color_addition = uniform(-0.15, 0.15)
     varied_color = fixed_color + color_addition
     if varied_color > 1:
         varied_color - 1
@@ -277,17 +277,9 @@ def build_mat(fixed_color, saturation, value, shiny):
 
     sat_addition = uniform(-0.1, 0.1)
     varied_saturation = saturation + sat_addition
-    if varied_saturation > 1:
-        varied_saturation - 1
-    if varied_saturation < 0:
-        varied_saturation + 1
     
     value_addition = uniform(-0.1, 0.1)
     varied_value = value + value_addition
-    if varied_value > 1:
-        varied_value - 1
-    if varied_value < 0:
-        varied_value + 1
 
     if shiny:
         built_mat = bpy.data.materials.new(name=str(varied_color+varied_saturation+varied_value))
