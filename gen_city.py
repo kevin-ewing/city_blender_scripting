@@ -1,4 +1,3 @@
-from re import S
 import bpy
 import time
 from random import *
