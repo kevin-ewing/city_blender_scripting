@@ -21,9 +21,9 @@ RIVER_SIZE = 4
 RENDER_SIZE_FACTOR = 1
 RENDER_SAMPLE_FACTOR = .25
 
-
 @dataclass
 class Building:
+    conjoined: bool
     exists: bool
     x: float
     y: float
@@ -153,19 +153,33 @@ def main():
 
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
-    print("Building all buildings...")
-    carve_river(city_plan)
 
+    print("Carving River...")
+    carve_river(city_plan)
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+
+    
 
     fixed_color = uniform(0,1)
     saturation = uniform(0.1, 0.9)
     value = uniform(0.2, 1)
 
+    print("Carving River...")
+    join_buildings(city_plan, fixed_color, saturation, value)
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
+
+    print("Building all buildings...")
+
     build_all_buildings(city_plan, fixed_color, saturation, value)
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
 
+    print("Seting up composite...")
     setup_composite()
+    print("--- %s seconds ---\n" % (time.time() - checkpoint))
+    checkpoint = time.time()
 
 
 def carve_park(city_plan):
@@ -226,6 +240,35 @@ def carve_river(city_plan):
         except IndexError:
             edge = True
 
+def join_buildings(city_plan, fixed_color, saturation, value):
+    for cols in range(len(city_plan)):
+        for rows in range(len(city_plan[cols])):
+            
+            if uniform(0,1) < 0.08 and city_plan[cols][rows].height < 4 and city_plan[cols][rows].conjoined == False:
+                if uniform(0,1) < 0.5:
+                    try:
+                        if city_plan[cols][rows+1].conjoined == False and city_plan[cols][rows+1].exists == True and city_plan[cols][rows].exists == True:
+                            city_plan[cols][rows].exists = False
+                            city_plan[cols][rows+1].exists = False
+                            city_plan[cols][rows+1].conjoined = True
+
+                            bpy.ops.mesh.primitive_cube_add(location = (city_plan[cols][rows].x, city_plan[cols][rows].y + .5, city_plan[cols][rows].height), scale = (.40, .90, city_plan[cols][rows].height))
+                            bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
+
+                    except IndexError:
+                        pass
+                else:
+                    try:
+                        if city_plan[cols+1][rows].conjoined == False and city_plan[cols+1][rows].exists == True and city_plan[cols][rows].exists == True:
+                            city_plan[cols][rows].exists = False
+                            city_plan[cols+1][rows].exists = False
+                            city_plan[cols+1][rows].conjoined = True
+
+                            bpy.ops.mesh.primitive_cube_add(location = (city_plan[cols][rows].x + 0.5, city_plan[cols][rows].y, city_plan[cols][rows].height), scale = (.90, .40, city_plan[cols][rows].height))
+                            bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
+
+                    except IndexError:
+                        pass
 
     
 
@@ -263,7 +306,8 @@ def plan_building(x, y, center_x, center_y):
     height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
     tier_threshold = randint(0, 20)*height
 
-    return Building(True, x, y, height, tier_threshold)
+    #Building is first actually initialized
+    return Building(False, True, x, y, height, tier_threshold)
 
 def build_mat(fixed_color, saturation, value, shiny):
 
