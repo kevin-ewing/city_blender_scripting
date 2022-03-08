@@ -1,4 +1,4 @@
 .DS_Store
-*.blend1
+*.blend*
 render_log.txt
 output/
