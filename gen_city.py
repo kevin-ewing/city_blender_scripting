@@ -7,7 +7,7 @@ from array import *
 import sys
 from colorsys import hsv_to_rgb
 
-RENDER = True
+RENDER = False
 
 #City VARS
 SIZE_OF_CITY = 120
@@ -19,7 +19,7 @@ RIVER_SIZE = 4
 
 #Render VARS
 RENDER_SIZE_FACTOR = 1
-RENDER_SAMPLE_FACTOR = .25
+RENDER_SAMPLE_FACTOR = 1
 
 @dataclass
 class Building:
@@ -126,7 +126,6 @@ def main():
             n.inputs["Roughness"].default_value = 0.15
     
 
-
     bpy.ops.mesh.primitive_plane_add(size=400, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
     bpy.ops.object.modifier_add(type='NODES')
     bpy.data.node_groups["Geometry Nodes"].name = "mountain"
@@ -134,11 +133,6 @@ def main():
     create_mountain_tree()
 
     bpy.ops.object.shade_smooth()
-
-    # selected_objects = (obj for obj in bpy.data.objects if obj.select_get())
-    # for obj in selected_objects:
-    #     modifier = obj.modifiers.new(name='mountain', type='NODES')
-    # bpy.context.object.modifiers["GeometryNodes"].Input_2 = 4
 
     bpy.context.object.data.materials.append(mat)
     
@@ -154,7 +148,7 @@ def main():
     #Sets world color 
     world_strength = uniform(0, sun_strength/MAX_BRIGHT)
     bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (hsv_to_rgb(world_fixed_color, world_saturation, world_value)[0], hsv_to_rgb(world_fixed_color, world_saturation, world_value)[1],hsv_to_rgb(world_fixed_color, world_saturation, world_value)[2], world_strength)
-    
+
     #Generate a new random color in line with the palette and then create a building
     print("--- %s seconds ---\n" % (time.time() - checkpoint))
     checkpoint = time.time()
@@ -377,8 +371,6 @@ def build_all_buildings(city_plan, fixed_color, saturation, value):
                 l_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
             elif row.tier_threshold > (2 * (th_max/15)):
                 pass
-            elif row.tier_threshold < (.8 * (th_max/15)):
-                small_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
             else:
                 bpy.ops.mesh.primitive_cube_add(location = (row.x, row.y, row.height), scale = (.40, .40, row.height))
                 bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
@@ -457,17 +449,9 @@ def l_building(x, y, height, mat):
         bpy.ops.mesh.primitive_cube_add(location = (x, y, i*.4), scale = (.4, .4, .02))
         bpy.context.object.data.materials.append(mat)   
 
-def small_building(x, y, height, mat):
-    x_orient = choice([-1, 1])
-    y_orient = choice([-1, 1])
-    scaler = uniform(.9, 1.1)
-    bpy.ops.mesh.primitive_cube_add(location = (x + (.2 * x_orient), y, height*scaler), scale = (.2, .4, height*scaler))
-    bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y + (.2 * y_orient), height), scale = (.4, .2, height))
-    bpy.context.object.data.materials.append(mat)
-
 
 def create_mountain_tree():
+    #Created with https://github.com/Korchy/blender_nodetree_source
 
     # MATERIAL
     node_tree1 = bpy.data.node_groups.get('mountain')
@@ -2639,7 +2623,7 @@ if __name__ == "__main__":
         print("Rendering...")
         checkpoint = time.time()
         bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[7]
-        bpy.context.scene.cycles.samples = 1024 * RENDER_SAMPLE_FACTOR
+        bpy.context.scene.cycles.samples = int(256 * RENDER_SAMPLE_FACTOR)
         bpy.context.scene.render.resolution_x = 3840 * RENDER_SIZE_FACTOR
         bpy.context.scene.render.resolution_y = 1644 * RENDER_SIZE_FACTOR
         bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
