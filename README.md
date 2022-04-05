@@ -1,6 +1,6 @@
 # City Blender Scripting
 
-This is a small collection of the work I have done in my spring 2022 semester in my Animation Studio Independent study. This semester I tasked myself with independently learning blenders python API, and exploring generative/procedural art. This was my first project. I hope you enjoy the artwork either the sample renders or by exploring the generation yourself.
+City Blender Scripting is a collection of the work I have done in my Spring 2022 semester in my Animation Studio Independent Study. This semester I tasked myself with learning Blender's python API. To do this I would explore my interest in generative and procedural art. This was my first project. I hope you enjoy the artwork: either the sample renders, or by exploring image generation yourself.
 
 ---
 
