@@ -1,15 +1,24 @@
-import bpy
-import time
-from random import *
-from math import *
-from dataclasses import dataclass
-from array import *
-import sys
+'''
+Procedural generation of a citycape
+
+By Kevin Ewing
+Spring 2022
+Middlebury Animation Studio Independent project
+'''
+
 from colorsys import hsv_to_rgb
+from dataclasses import dataclass
+from random import randint, uniform
+from os import getcwd
+from sys import argv
+from time import time
+import math as m
+import bpy
 
-RENDER = False
+# To render or not to render that is the question
+RENDER = True
 
-#City VARS
+# City global variables
 SIZE_OF_CITY = 120
 CENTER_FACTOR = 5
 CENTER_SIZE = 9
@@ -17,9 +26,20 @@ MAX_BRIGHT = 13
 RIVER_CURVE_FACTOR = .20
 RIVER_SIZE = 4
 
-#Render VARS
+# Render global variables
 RENDER_SIZE_FACTOR = 1
 RENDER_SAMPLE_FACTOR = 1
+
+'''
+Each building is initialized with a Building struct:
+    conjoined: false
+    exists: true
+    x:
+    y:
+    height:
+    threshold:
+'''
+
 
 @dataclass
 class Building:
@@ -31,11 +51,19 @@ class Building:
     tier_threshold: float
 
 
-#Blender will update the view with each primitive addition, we do not want that, instead lets block it from updating the view until the end
-#https://blender.stackexchange.com/questions/7358/python-performance-with-blender-operators
+# Blender will update the view with each primitive addition, we do not want that, instead
+# lets block it from updating the view until the end
+# https://blender.stackexchange.com/questions/7358/python-performance-with-blender-
+# operators
 def run_ops_without_view_layer_update(func):
+    '''
+    Workaround function as mentioned above to only update the meshes after everything
+    has been generated, severely shortens the amount of time building generation takes
+    '''
+
     from bpy.ops import _BPyOpsSubModOp
     view_layer_update = _BPyOpsSubModOp._view_layer_update
+
     def dummy_view_layer_update(context):
         pass
     try:
@@ -48,182 +76,211 @@ def run_ops_without_view_layer_update(func):
 def main():
     '''
     Main function
-        clears scene, sets conditions, calls grid of building()
+        clears scene, sets conditions, generates building plan then starts generation
+        does not do the rendering
     '''
+
+    # Initializing the empty array of the full city plan, will make 2d
     city_plan = []
 
+    # Checkpoint before buildings are cleared
+    checkpoint = time()
     print("Clearing all buildings...")
-    checkpoint = time.time()
 
-    #Clearing all objects and materials from the prior scene
+    # Clearing all objects and materials from the prior scene
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
     bpy.context.scene.render.engine = 'CYCLES'
     for material in bpy.data.materials:
         bpy.data.materials.remove(material)
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
 
-    #Randomly generates the "city center"
+    # Checkpoint after the buildings are cleared; before city is planned
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Randomizing center of city and sun...")
-    center_coord = SIZE_OF_CITY//CENTER_FACTOR
-    center_x=randint(-center_coord, center_coord)
-    center_y=randint(-center_coord, center_coord)
 
-    sun_distance=2*SIZE_OF_CITY
-    sun_x=uniform(-sun_distance,sun_distance)
-    sun_decider = randint(0,1)
-    if sun_decider:
-        sun_y=sqrt(pow(sun_distance,2)-pow(sun_x,2))
-    else:
-        sun_y=-sqrt(pow(sun_distance,2)-pow(sun_x,2))
-    sun_z=uniform(1,50)
+    # Randomly generates the "city center"
+    center_coord = SIZE_OF_CITY // CENTER_FACTOR
+    center_x = randint(-center_coord, center_coord)
+    center_y = randint(-center_coord, center_coord)
 
-    #Adds Sun
-    sun_angle_z = pi - atan(sun_x / sun_y)
+    sun_distance = 2 * SIZE_OF_CITY
+    sun_x = uniform(-sun_distance, sun_distance)
+    sun_decider = randint(0, 1)
     if sun_decider:
-        sun_angle_x = atan(sun_distance / (sun_z))
+        sun_y = m.sqrt(m.pow(sun_distance, 2) - m.pow(sun_x, 2))
     else:
-        sun_angle_x = -atan(sun_distance / (sun_z))
-    sun_strength = uniform(1,MAX_BRIGHT)
-    bpy.ops.object.light_add(type='SUN', radius=1, location=(sun_x, sun_y, sun_z), rotation=(sun_angle_x, 0, sun_angle_z), scale=(1, 1, 1))
+        sun_y = - m.sqrt(m.pow(sun_distance, 2) - m.pow(sun_x, 2))
+    sun_z = uniform(1, 50)
+
+    # Adds Sun
+    sun_angle_z = m.pi - m.atan(sun_x / sun_y)
+    if sun_decider:
+        sun_angle_x = m.atan(sun_distance / (sun_z))
+    else:
+        sun_angle_x = -m.atan(sun_distance / (sun_z))
+    sun_strength = uniform(1, MAX_BRIGHT)
+    bpy.ops.object.light_add(
+        type='SUN', radius=1, location=(
+            sun_x, sun_y, sun_z), rotation=(
+            sun_angle_x, 0, sun_angle_z), scale=(
+                1, 1, 1))
     bpy.context.object.data.energy = sun_strength
-    
+
     sun_mat = bpy.data.materials.new(name="sun_mat")
     sun_mat.use_nodes = True
     for n in sun_mat.node_tree.nodes:
         if n.type == 'BSDF_PRINCIPLED':
             n.inputs["Emission Strength"].default_value = 10
             n.inputs["Emission"].default_value = (1, 1, 1, 1)
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=5, radius=5, enter_editmode=False, align='WORLD', location=(sun_x, sun_y, sun_z), scale=(1, 1, 1))
+    bpy.ops.mesh.primitive_ico_sphere_add(
+        subdivisions=5, radius=5, enter_editmode=False, align='WORLD', location=(
+            sun_x, sun_y, sun_z), scale=(
+            1, 1, 1))
     bpy.context.object.data.materials.append(sun_mat)
     bpy.context.object.visible_shadow = False
 
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
+    # Checkpoint after generating city center and placing sun; before camera
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Randomizing camera...")
-    #Randomly places the Camera in the first quadrant of the scene
-    camera_distance=uniform(.8*SIZE_OF_CITY,1*SIZE_OF_CITY)
-    camera_x=uniform(0,camera_distance)
-    camera_y=sqrt(pow(camera_distance,2)-pow(camera_x,2))
-    camera_z=uniform(5,20)
 
-    #Adds Camera
-    camera_angle_z = pi - atan(camera_x / camera_y)
-    camera_angle_x = atan(camera_distance / (camera_z - 5))
-    bpy.ops.object.camera_add(enter_editmode=False, align='VIEW', location=(camera_x, camera_y, camera_z), rotation=(camera_angle_x, 0, camera_angle_z), scale=(1, 1, 1))
+    # Randomly places the Camera in the first quadrant of the scene
+    camera_distance = uniform(.8 * SIZE_OF_CITY, 1 * SIZE_OF_CITY)
+    camera_x = uniform(0, camera_distance)
+    camera_y = m.sqrt(m.pow(camera_distance, 2) - m.pow(camera_x, 2))
+    camera_z = uniform(5, 20)
+
+    # Adds Camera
+    camera_angle_z = m.pi - m.atan(camera_x / camera_y)
+    camera_angle_x = m.atan(camera_distance / (camera_z - 5))
+    bpy.ops.object.camera_add(
+        enter_editmode=False, align='VIEW', location=(
+            camera_x, camera_y, camera_z), rotation=(
+            camera_angle_x, 0, camera_angle_z), scale=(
+                1, 1, 1))
     bpy.context.scene.camera = bpy.context.object
 
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
+    # Checkpoint after creating sun before floor
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Creating floor...")
-    #Adds floor facing the camera
+
+    # Adds floor facing the camera
     mat = bpy.data.materials.new(name="floor")
     mat.use_nodes = True
     for n in mat.node_tree.nodes:
         if n.type == 'BSDF_PRINCIPLED':
             n.inputs["Metallic"].default_value = 0.65
             n.inputs["Roughness"].default_value = 0.15
-    
 
-    bpy.ops.mesh.primitive_plane_add(size=400, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
+    # Creates the geometry node tree in create_mountain_tree()
+    # And assigns that to the geometry node modifier
+    bpy.ops.mesh.primitive_plane_add(
+        size=400, enter_editmode=False, align='WORLD', location=(
+            0, 0, 0), scale=(
+            1, 1, 1))
     bpy.ops.object.modifier_add(type='NODES')
     bpy.data.node_groups["Geometry Nodes"].name = "mountain"
-    
     create_mountain_tree()
-
     bpy.ops.object.shade_smooth()
-
     bpy.context.object.data.materials.append(mat)
-    
 
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
-    print("Creating color palette...")
-    
-    world_fixed_color = uniform(0.4,0.85)
+    # Checkpoint after floor is generated
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
+    print("Creating color palette and setting world color...")
+
+    world_fixed_color = uniform(0.4, 0.85)
     world_saturation = uniform(0.4, 0.8)
     world_value = uniform(0.2, 1)
 
-    #Sets world color 
-    world_strength = uniform(0, sun_strength/MAX_BRIGHT)
-    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (hsv_to_rgb(world_fixed_color, world_saturation, world_value)[0], hsv_to_rgb(world_fixed_color, world_saturation, world_value)[1],hsv_to_rgb(world_fixed_color, world_saturation, world_value)[2], world_strength)
+    # Sets world color
+    world_strength = uniform(0, sun_strength / MAX_BRIGHT)
+    bpy.data.worlds["World"].node_tree.nodes["Background"].inputs[0].default_value = (
+        hsv_to_rgb(
+            world_fixed_color, world_saturation, world_value)[0], hsv_to_rgb(
+            world_fixed_color, world_saturation, world_value)[1], hsv_to_rgb(
+                world_fixed_color, world_saturation, world_value)[2], world_strength)
 
-    #Generate a new random color in line with the palette and then create a building
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
+    # Checkpoint after creating the pallette but before planning city
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Generating building plans...")
-    for i in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
+
+    for i in range(-SIZE_OF_CITY // 2, SIZE_OF_CITY // 2):
         temp = []
-        for j in range (-SIZE_OF_CITY//2,SIZE_OF_CITY//2):
+        for j in range(-SIZE_OF_CITY // 2, SIZE_OF_CITY // 2):
             temp.append(plan_building(i, j, center_x, center_y))
         city_plan.append(temp)
 
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
-
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Carving River...")
+
     carve_river(city_plan)
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
 
-    
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
+    print("Joining Buildings...")
 
-    fixed_color = uniform(0,1)
+    fixed_color = uniform(0, 1)
     saturation = uniform(0.1, 1)
     value = uniform(0.2, 1)
-
-    print("Joining Buildings...")
     join_buildings(city_plan, fixed_color, saturation, value)
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
 
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Building all buildings...")
 
     build_all_buildings(city_plan, fixed_color, saturation, value)
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
 
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
     print("Seting up composite...")
+
     setup_composite()
-    print("--- %s seconds ---\n" % (time.time() - checkpoint))
-    checkpoint = time.time()
+
+    print("--- %s seconds ---\n" % (time() - checkpoint))
+    checkpoint = time()
 
 
 def carve_park(city_plan):
-    """
-    Carves out a park in the city
-    """
-    center = randint(-SIZE_OF_CITY//2, SIZE_OF_CITY)
+    '''
+     Carves out a park in the city
+    '''
+
+    center = randint(-SIZE_OF_CITY // 2, SIZE_OF_CITY)
     height = randint(0, 12)
     width = randint(0, 12)
-    for i in range (center + (-height//2), center + (height//2)):
-        for j in range (center + (-width//2), center + (width//2)):
+    for i in range(center + (-height // 2), center + (height // 2)):
+        for j in range(center + (-width // 2), center + (width // 2)):
             try:
                 city_plan[i][j].exists = False
             except IndexError:
                 pass
 
+
 def carve_river(city_plan):
-    """
+    '''
     Carves out a river through the city
-    """
+    '''
+
     edge = False
     direction = 0
     for cols in city_plan:
         rand_start = randint(0, len(cols))
-    
+
     current_x = rand_start
     current_y = 0
 
-    
     while edge == False:
-        dir_change = uniform(0,1)
+        dir_change = uniform(0, 1)
         if dir_change < RIVER_CURVE_FACTOR:
             direction = (direction - 1) % 4
         elif dir_change < RIVER_CURVE_FACTOR * 2:
             direction = (direction + 1) % 4
-        try: 
+        try:
             if direction == 0:
                 current_y += 1
             elif direction == 1:
@@ -233,56 +290,79 @@ def carve_river(city_plan):
             else:
                 current_x -= 1
 
-            
-            #clear around
+            # clear around
             try:
-                for i in range(-RIVER_SIZE//2, RIVER_SIZE//2):
-                    for j in range(-RIVER_SIZE//2, RIVER_SIZE//2):
+                for i in range(-RIVER_SIZE // 2, RIVER_SIZE // 2):
+                    for j in range(-RIVER_SIZE // 2, RIVER_SIZE // 2):
                         city_plan[current_x + i][current_y + j].exists = False
             except IndexError:
                 pass
 
-            #If actual plan is at edge then we do exit loop
+            # If actual plan is at edge then we do exit loop
             city_plan[current_x][current_y].exists = False
 
         except IndexError:
             edge = True
 
+
 def join_buildings(city_plan, fixed_color, saturation, value):
+    '''
+    Will randomly join two neighboring buildings if they are not already joined
+    Assigns one to be twice the width and marks the other's stuct as exists = false
+    '''
+
     for cols in range(len(city_plan)):
         for rows in range(len(city_plan[cols])):
-            
-            if uniform(0,1) < 0.08 and city_plan[cols][rows].height < 4 and city_plan[cols][rows].conjoined == False:
-                if uniform(0,1) < 0.5:
+            if (uniform(0, 1) < 0.08 and city_plan[cols][rows].height < 4 and
+                    city_plan[cols][rows].conjoined == False):
+                if uniform(0, 1) < 0.5:
                     try:
-                        if city_plan[cols][rows+1].conjoined == False and city_plan[cols][rows+1].exists == True and city_plan[cols][rows].exists == True:
+                        if (city_plan[cols][rows + 1].conjoined == False and
+                            city_plan[cols][rows + 1].exists and
+                                city_plan[cols][rows].exists):
                             city_plan[cols][rows].exists = False
-                            city_plan[cols][rows+1].exists = False
-                            city_plan[cols][rows+1].conjoined = True
+                            city_plan[cols][rows + 1].exists = False
+                            city_plan[cols][rows + 1].conjoined = True
 
-                            bpy.ops.mesh.primitive_cube_add(location = (city_plan[cols][rows].x, city_plan[cols][rows].y + .5, city_plan[cols][rows].height), scale = (.40, .90, city_plan[cols][rows].height))
-                            bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
-
+                            bpy.ops.mesh.primitive_cube_add(location=(
+                                city_plan[cols][rows].x, city_plan[cols][rows].y + .5,
+                                city_plan[cols][rows].height), scale=(.40, .90,
+                                                                      city_plan[cols][rows].height))
+                            bpy.context.object.data.materials.append(build_mat(
+                                fixed_color, saturation, value, 0))
                     except IndexError:
+                        # Erroring is OK, if it has just gone off the edge of
+                        # the map
                         pass
                 else:
                     try:
-                        if city_plan[cols+1][rows].conjoined == False and city_plan[cols+1][rows].exists == True and city_plan[cols][rows].exists == True:
+                        if (city_plan[cols + 1][rows].conjoined == False and
+                                city_plan[cols + 1][rows].exists and
+                                city_plan[cols][rows].exists):
                             city_plan[cols][rows].exists = False
-                            city_plan[cols+1][rows].exists = False
-                            city_plan[cols+1][rows].conjoined = True
+                            city_plan[cols + 1][rows].exists = False
+                            city_plan[cols + 1][rows].conjoined = True
 
-                            bpy.ops.mesh.primitive_cube_add(location = (city_plan[cols][rows].x + 0.5, city_plan[cols][rows].y, city_plan[cols][rows].height), scale = (.90, .40, city_plan[cols][rows].height))
-                            bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
-
+                            bpy.ops.mesh.primitive_cube_add(location=(
+                                city_plan[cols][rows].x +
+                                0.5, city_plan[cols][rows].y,
+                                city_plan[cols][rows].height), scale=(.90, .40,
+                                                                      city_plan[cols][rows].height))
+                            bpy.context.object.data.materials.append(
+                                build_mat(fixed_color, saturation, value, 0))
                     except IndexError:
+                        # Erroring is OK, if it has just gone off the edge of
+                        # the map
                         pass
-
-    
 
 
 def setup_composite():
-    #https://blender.stackexchange.com/questions/19500/controling-compositor-by-python
+    '''
+    Sets up the composite node tree for denoise and glare
+
+    help with: https://blender.stackexchange.com/questions/19500/controling-compositor-by-python
+    '''
+
     # switch on nodes and get reference
     bpy.context.scene.use_nodes = True
     tree = bpy.context.scene.node_tree
@@ -309,14 +389,23 @@ def setup_composite():
 
 
 def plan_building(x, y, center_x, center_y):
-    height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
-    tier_threshold = randint(0, 20)*height
+    '''
+    Initializes the building based of the x and y of the building and how far from
+    the city center it is going to be
+    '''
 
-    #Building is first actually initialized
+    height = determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY)
+    tier_threshold = randint(0, 20) * height
+
+    # Building is first actually initialized
     return Building(False, True, x, y, height, tier_threshold)
 
-def build_mat(fixed_color, saturation, value, shiny):
 
+def build_mat(fixed_color, saturation, value, shiny):
+    '''
+    Helper function to build the material based on predetermined
+    parameters defined in main
+    '''
     color_addition = uniform(-0.15, 0.15)
     varied_color = fixed_color + color_addition
     if varied_color > 1:
@@ -326,132 +415,291 @@ def build_mat(fixed_color, saturation, value, shiny):
 
     sat_addition = uniform(-0.1, 0.1)
     varied_saturation = saturation + sat_addition
-    
+
     value_addition = uniform(-0.1, 0.1)
     varied_value = value + value_addition
 
     if shiny:
-        built_mat = bpy.data.materials.new(name=str(varied_color+varied_saturation+varied_value))
+        built_mat = bpy.data.materials.new(name=str(
+            varied_color + varied_saturation + varied_value))
         built_mat.use_nodes = True
         for n in built_mat.node_tree.nodes:
             if n.type == 'BSDF_PRINCIPLED':
                 n.inputs["Metallic"].default_value = 0.5
                 n.inputs["Roughness"].default_value = 0.05
-                n.inputs["Base Color"].default_value = (hsv_to_rgb(varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(varied_color, varied_saturation, varied_value)[1],hsv_to_rgb(varied_color, varied_saturation, varied_value)[2], 1.0)
+                n.inputs["Base Color"].default_value = (
+                    hsv_to_rgb(
+                        varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(
+                        varied_color, varied_saturation, varied_value)[1], hsv_to_rgb(
+                        varied_color, varied_saturation, varied_value)[2], 1.0)
     else:
         built_mat = bpy.data.materials.new(name="mat")
-        built_mat.diffuse_color = (hsv_to_rgb(varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(varied_color, varied_saturation, varied_value)[1],hsv_to_rgb(varied_color, varied_saturation, varied_value)[2], 1.0)
+        built_mat.diffuse_color = (
+            hsv_to_rgb(
+                varied_color, varied_saturation, varied_value)[0], hsv_to_rgb(
+                varied_color, varied_saturation, varied_value)[1], hsv_to_rgb(
+                varied_color, varied_saturation, varied_value)[2], 1.0)
 
     return built_mat
 
+
 def build_all_buildings(city_plan, fixed_color, saturation, value):
+    '''
+    Actually places the cubes in blender based on the city plan, and will generate
+    the color on the fly
+    '''
+
+    # Determines the highest tiered building in the city
     th_max = 0
     for cols in city_plan:
         for row in cols:
             if row.tier_threshold > th_max:
                 th_max = row.tier_threshold
 
+    # Breaks down the building tiers based from the maximum one generated
     for cols in city_plan:
         for row in cols:
-            if row.exists == False:
+            if not row.exists:
                 pass
-            elif row.tier_threshold > (11 * (th_max/15)):
-                pointed_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (9 * (th_max/15)):
-                tiered_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (8 * (th_max/15)):
-                striped_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (7 * (th_max/15)):
-                spired_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (6 * (th_max/15)):
-                crossed_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (5 * (th_max/15)):
-                glass_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 1))
-            elif row.tier_threshold > (4 * (th_max/15)):
-                l_building(row.x, row.y, row.height, build_mat(fixed_color, saturation, value, 0))
-            elif row.tier_threshold > (2 * (th_max/15)):
+            elif row.tier_threshold > (11 * (th_max / 15)):
+                pointed_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (9 * (th_max / 15)):
+                tiered_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (8 * (th_max / 15)):
+                striped_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (7 * (th_max / 15)):
+                spired_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (6 * (th_max / 15)):
+                crossed_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (5 * (th_max / 15)):
+                glass_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 1))
+            elif row.tier_threshold > (4 * (th_max / 15)):
+                slotted_building(
+                    row.x, row.y, row.height, build_mat(
+                        fixed_color, saturation, value, 0))
+            elif row.tier_threshold > (2 * (th_max / 15)):
                 pass
             else:
-                bpy.ops.mesh.primitive_cube_add(location = (row.x, row.y, row.height), scale = (.40, .40, row.height))
-                bpy.context.object.data.materials.append(build_mat(fixed_color, saturation, value, 0))
+                bpy.ops.mesh.primitive_cube_add(location=(row.x, row.y, row.height),
+                                                scale=(.40, .40, row.height))
+                bpy.context.object.data.materials.append(
+                    build_mat(fixed_color, saturation, value, 0))
+
 
 def determine_building_height(x, y, center_x, center_y, SIZE_OF_CITY):
-    distance = sqrt((x - center_x)**2 + (y - center_y)**2)
-    minimum = (distance ** 0.25) / (SIZE_OF_CITY/10)
-    maximum = 9 - (8 / (1 + pow(1.3, (-1.4 * (distance - CENTER_SIZE)))))
+    '''
+    Determines the building threshold based on the distance from the city center
+    Designed to ease in and out of the downtown area
+        Uses a sigmoid growth curve
+    '''
+
+    distance = m.sqrt((x - center_x)**2 + (y - center_y)**2)
+    minimum = (distance ** 0.25) / (SIZE_OF_CITY / 10)
+    maximum = 9 - (8 / (1 + m.pow(1.3, (-1.4 * (distance - CENTER_SIZE)))))
     return uniform(minimum, maximum)
-     
+
+
 def pointed_building(x, y, height, mat):
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.45, .45, height))
+    '''
+    Generates the pointed building given the location height and passed the mat
+    '''
+
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(.45, .45,
+                                                                    height))
     bpy.context.object.data.materials.append(mat)
     size_of_point = uniform(0.05, 0.12)
-    length_of_point = uniform(10, 20)*size_of_point
-    bpy.ops.object.duplicate_move(OBJECT_OT_duplicate={"linked":False, "mode":'TRANSLATION'}, TRANSFORM_OT_translate={"value":(0, 0, 0), "orient_type":'GLOBAL', "orient_matrix":((0, 0, 0), (0, 0, 0), (0, 0, 0)), "orient_matrix_type":'GLOBAL', "constraint_axis":(False, False, False), "mirror":False, "use_proportional_edit":False, "proportional_edit_falloff":'SMOOTH', "proportional_size":1, "use_proportional_connected":False, "use_proportional_projected":False, "snap":False, "snap_target":'CLOSEST', "snap_point":(0, 0, 0), "snap_align":False, "snap_normal":(0, 0, 0), "gpencil_strokes":False, "cursor_transform":False, "texture_space":False, "remove_on_cancel":False, "release_confirm":False, "use_accurate":False, "use_automerge_and_split":False})
-    bpy.ops.transform.resize(value=(size_of_point, size_of_point, 1), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(True, True, False), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
-    bpy.ops.transform.translate(value=(0, 0, length_of_point), orient_type='GLOBAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='GLOBAL', constraint_axis=(False, False, True), mirror=True, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False)
+    length_of_point = uniform(10, 20) * size_of_point
+    bpy.ops.object.duplicate_move(
+        OBJECT_OT_duplicate={
+            "linked": False,
+            "mode": 'TRANSLATION'},
+        TRANSFORM_OT_translate={
+            "value": (0, 0, 0),
+            "orient_type": 'GLOBAL',
+            "orient_matrix": (
+                (0, 0, 0),
+                (0, 0, 0),
+                (0, 0, 0)),
+            "orient_matrix_type": 'GLOBAL',
+            "constraint_axis": (False, False, False),
+            "mirror": False,
+            "use_proportional_edit": False,
+            "proportional_edit_falloff": 'SMOOTH',
+            "proportional_size": 1,
+            "use_proportional_connected": False,
+            "use_proportional_projected": False,
+            "snap": False,
+            "snap_target": 'CLOSEST',
+            "snap_point": (0, 0, 0),
+            "snap_align": False,
+            "snap_normal": (0, 0, 0),
+            "gpencil_strokes": False,
+            "cursor_transform": False,
+            "texture_space": False,
+            "remove_on_cancel": False,
+            "release_confirm": False,
+            "use_accurate": False,
+            "use_automerge_and_split": False})
+    bpy.ops.transform.resize(
+        value=(size_of_point, size_of_point, 1),
+        orient_type='GLOBAL',
+        orient_matrix=(
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1)),
+        orient_matrix_type='GLOBAL',
+        constraint_axis=(True, True, False),
+        mirror=True,
+        use_proportional_edit=False,
+        proportional_edit_falloff='SMOOTH',
+        proportional_size=1,
+        use_proportional_connected=False,
+        use_proportional_projected=False)
+    bpy.ops.transform.translate(
+        value=(0, 0, length_of_point),
+        orient_type='GLOBAL',
+        orient_matrix=(
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1)),
+        orient_matrix_type='GLOBAL',
+        constraint_axis=(
+            False,
+            False,
+            True),
+        mirror=True,
+        use_proportional_edit=False,
+        proportional_edit_falloff='SMOOTH',
+        proportional_size=1,
+        use_proportional_connected=False,
+        use_proportional_projected=False)
+
 
 def tiered_building(x, y, height, mat):
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height/4), scale = (.45, .45, height/4))
+    '''
+    Generates the tiered building given the location height and passed the mat
+    '''
+
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height / 4), scale=(
+        .45, .45, height / 4))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, 3 * (height/4)), scale = (.4, .4, height/4))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, 3 * (height / 4)), scale=(
+        .4, .4, height / 4))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, 5 * (height/4)), scale = (.35, .35, height/4))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, 5 * (height / 4)), scale=(
+        .35, .35, height / 4))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, 7 * (height/4)), scale = (.3, .3, height/4))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, 7 * (height / 4)), scale=(
+        .3, .3, height / 4))
     bpy.context.object.data.materials.append(mat)
+
 
 def striped_building(x, y, height, mat):
+    '''
+    Generates the striped building given the location height and passed the mat
+    '''
+
     step_height_factor = uniform(1.05, 1.2)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.35, .35, height))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(
+        .35, .35, height))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x+.25, y+.25, height/step_height_factor), scale = (.13, .13, height/step_height_factor))
+    bpy.ops.mesh.primitive_cube_add(location=(x + .25, y + .25, height / step_height_factor),
+                                    scale=(.13, .13, height / step_height_factor))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x-.25, y+.25, height/step_height_factor), scale = (.13, .13, height/step_height_factor))
+    bpy.ops.mesh.primitive_cube_add(location=(x - .25, y + .25, height / step_height_factor),
+                                    scale=(.13, .13, height / step_height_factor))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x+.25, y-.25, height/step_height_factor), scale = (.13, .13, height/step_height_factor))
+    bpy.ops.mesh.primitive_cube_add(location=(x + .25, y - .25, height / step_height_factor),
+                                    scale=(.13, .13, height / step_height_factor))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x-.25, y-.25, height/step_height_factor), scale = (.13, .13, height/step_height_factor))
+    bpy.ops.mesh.primitive_cube_add(location=(x - .25, y - .25, height / step_height_factor),
+                                    scale=(.13, .13, height / step_height_factor))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height+2*(step_height_factor-1)), scale = (.3, .3, height))
+    bpy.ops.mesh.primitive_cube_add(location=(
+        x, y, height + 2 * (step_height_factor - 1)), scale=(.3, .3, height))
     bpy.context.object.data.materials.append(mat)
-    
+
+
 def spired_building(x, y, height, mat):
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.40, .40, height))
+    '''
+    Generates the spired building given the location height and passed the mat
+    '''
+
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(
+        .40, .40, height))
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cone_add(location = (x, y, 2*height+.14), scale = (.34, .34, .7))
+    bpy.ops.mesh.primitive_cone_add(location=(x, y, 2 * height + .14), scale=(
+        .34, .34, .7))
     bpy.ops.object.shade_smooth()
     bpy.context.object.data.materials.append(mat)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, 2*height+.14), scale = (.38, .38, .08))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, 2 * height + .14), scale=(
+        .38, .38, .08))
     bpy.context.object.data.materials.append(mat)
+
 
 def crossed_building(x, y, height, mat):
-    max_beam_count = 10
+    '''
+    Generates the crossed building given the location height and passed the mat
+    '''
+
+    max_beam_count = 12
 
     number_beams = randint(3, max_beam_count)
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.35, .35, height+.04))
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(
+        .35, .35, height + .04))
     bpy.context.object.data.materials.append(mat)
-    beam_offset = 2*(.35/number_beams)
-    for i in range (number_beams+1):
-        bpy.ops.mesh.primitive_cube_add(location = (x, y-.35+(beam_offset*i), height), scale = (.4, .4/(3*number_beams), height))
+    beam_offset = 2 * (.35 / number_beams)
+    for i in range(number_beams + 1):
+        bpy.ops.mesh.primitive_cube_add(location=(x, y - .35 + (beam_offset * i), height),
+                                        scale=(.4, .4 / (3 * number_beams), height))
         bpy.context.object.data.materials.append(mat)
-        bpy.ops.mesh.primitive_cube_add(location = (x-.35+(beam_offset*i), y, height), scale = (.4/(3*number_beams), .4, height))
+        bpy.ops.mesh.primitive_cube_add(location=(x - .35 + (beam_offset * i), y, height),
+                                        scale=(.4 / (3 * number_beams), .4, height))
         bpy.context.object.data.materials.append(mat)
+
 
 def glass_building(x, y, height, mat):
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.40, .40, height)) 
+    '''
+    Generates the spired building given the location height and passed the mat
+    '''
+
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(
+        .40, .40, height))
     bpy.context.object.data.materials.append(mat)
 
-def l_building(x, y, height, mat):
-    bpy.ops.mesh.primitive_cube_add(location = (x, y, height), scale = (.39, .39, height))
+
+def slotted_building(x, y, height, mat):
+    '''
+    Generates the slotted building given the location height and passed the mat
+    '''
+
+    bpy.ops.mesh.primitive_cube_add(location=(x, y, height), scale=(
+        .39, .39, height))
     bpy.context.object.data.materials.append(mat)
-    floors = int (height // .2)
-    for i in range (floors + 1):
-        bpy.ops.mesh.primitive_cube_add(location = (x, y, i*.4), scale = (.4, .4, .02))
-        bpy.context.object.data.materials.append(mat)   
+    floors = int(height // .2)
+    for i in range(floors + 1):
+        bpy.ops.mesh.primitive_cube_add(location=(x, y, i * .4), scale=(
+            .4, .4, .02))
+        bpy.context.object.data.materials.append(mat)
 
 
 def create_mountain_tree():
-    #Created with https://github.com/Korchy/blender_nodetree_source
+    '''
+    Generates the node tree for the mountain geometry node to be applied to the plane mesh
+    Code created with https://github.com/Korchy/blender_nodetree_source
+    '''
 
     # MATERIAL
     node_tree1 = bpy.data.node_groups.get('mountain')
@@ -477,7 +725,8 @@ def create_mountain_tree():
     # NODES
     group_output_1 = node_tree1.nodes.new('NodeGroupOutput')
     if hasattr(group_output_1, 'color'):
-        group_output_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        group_output_1.color = (0.6079999804496765, 0.6079999804496765,
+                                0.6079999804496765)
     if hasattr(group_output_1, 'hide'):
         group_output_1.hide = False
     if hasattr(group_output_1, 'is_active_output'):
@@ -495,7 +744,10 @@ def create_mountain_tree():
 
     subdivide_mesh_1 = node_tree1.nodes.new('GeometryNodeSubdivideMesh')
     if hasattr(subdivide_mesh_1, 'color'):
-        subdivide_mesh_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        subdivide_mesh_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(subdivide_mesh_1, 'hide'):
         subdivide_mesh_1.hide = False
     if hasattr(subdivide_mesh_1, 'location'):
@@ -508,7 +760,8 @@ def create_mountain_tree():
         subdivide_mesh_1.use_custom_color = False
     if hasattr(subdivide_mesh_1, 'width'):
         subdivide_mesh_1.width = 140.0
-    input_ = next((input_ for input_ in subdivide_mesh_1.inputs if input_.identifier=='Level'), None)
+    input_ = next((input_ for input_ in subdivide_mesh_1.inputs
+                   if input_.identifier == 'Level'), None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 1
@@ -527,7 +780,10 @@ def create_mountain_tree():
 
     position_1 = node_tree1.nodes.new('GeometryNodeInputPosition')
     if hasattr(position_1, 'color'):
-        position_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        position_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(position_1, 'hide'):
         position_1.hide = False
     if hasattr(position_1, 'location'):
@@ -540,7 +796,8 @@ def create_mountain_tree():
         position_1.use_custom_color = False
     if hasattr(position_1, 'width'):
         position_1.width = 140.0
-    output = next((output for output in position_1.outputs if output.identifier=='Position'), None)
+    output = next((output for output in position_1.outputs
+                   if output.identifier == 'Position'), None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -559,7 +816,10 @@ def create_mountain_tree():
 
     math_002_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_002_1, 'color'):
-        math_002_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_002_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_002_1, 'hide'):
         math_002_1.hide = False
     if hasattr(math_002_1, 'location'):
@@ -576,7 +836,9 @@ def create_mountain_tree():
         math_002_1.use_custom_color = False
     if hasattr(math_002_1, 'width'):
         math_002_1.width = 140.0
-    input_ = next((input_ for input_ in math_002_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_002_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -592,7 +854,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_002_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_002_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -608,7 +872,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_002_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_002_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -624,7 +890,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_002_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_002_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -643,7 +911,10 @@ def create_mountain_tree():
 
     math_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_1, 'color'):
-        math_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_1, 'hide'):
         math_1.hide = False
     if hasattr(math_1, 'location'):
@@ -660,7 +931,9 @@ def create_mountain_tree():
         math_1.use_custom_color = False
     if hasattr(math_1, 'width'):
         math_1.width = 140.0
-    input_ = next((input_ for input_ in math_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -676,7 +949,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -692,7 +967,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -708,7 +985,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -727,7 +1006,10 @@ def create_mountain_tree():
 
     colorramp_1 = node_tree1.nodes.new('ShaderNodeValToRGB')
     if hasattr(colorramp_1, 'color'):
-        colorramp_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        colorramp_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(colorramp_1, 'color_ramp'):
         if hasattr(colorramp_1.color_ramp, 'color_mode'):
             colorramp_1.color_ramp.color_mode = 'RGB'
@@ -764,7 +1046,9 @@ def create_mountain_tree():
         colorramp_1.use_custom_color = False
     if hasattr(colorramp_1, 'width'):
         colorramp_1.width = 240.0
-    input_ = next((input_ for input_ in colorramp_1.inputs if input_.identifier=='Fac'), None)
+    input_ = next(
+        (input_ for input_ in colorramp_1.inputs if input_.identifier == 'Fac'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -780,7 +1064,9 @@ def create_mountain_tree():
             input_.name = 'Fac'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in colorramp_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in colorramp_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -796,7 +1082,9 @@ def create_mountain_tree():
             output.name = 'Color'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in colorramp_1.outputs if output.identifier=='Alpha'), None)
+    output = next(
+        (output for output in colorramp_1.outputs if output.identifier == 'Alpha'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -815,7 +1103,10 @@ def create_mountain_tree():
 
     vector_math_001_1 = node_tree1.nodes.new('ShaderNodeVectorMath')
     if hasattr(vector_math_001_1, 'color'):
-        vector_math_001_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        vector_math_001_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(vector_math_001_1, 'hide'):
         vector_math_001_1.hide = False
     if hasattr(vector_math_001_1, 'location'):
@@ -830,7 +1121,9 @@ def create_mountain_tree():
         vector_math_001_1.use_custom_color = False
     if hasattr(vector_math_001_1, 'width'):
         vector_math_001_1.width = 140.0
-    input_ = next((input_ for input_ in vector_math_001_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_001_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -846,10 +1139,13 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_001_1.inputs if input_.identifier=='Vector_001'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_001_1.inputs if input_.identifier == 'Vector_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
-            input_.default_value = (0.004000000189989805, 0.004000000189989805, 0.0)
+            input_.default_value = (
+                0.004000000189989805, 0.004000000189989805, 0.0)
         if hasattr(input_, 'display_shape'):
             input_.display_shape = 'DIAMOND_DOT'
         if hasattr(input_, 'enabled'):
@@ -862,7 +1158,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_001_1.inputs if input_.identifier=='Vector_002'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_001_1.inputs if input_.identifier == 'Vector_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -878,7 +1176,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_001_1.inputs if input_.identifier=='Scale'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_001_1.inputs if input_.identifier == 'Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 1.0
@@ -894,7 +1194,9 @@ def create_mountain_tree():
             input_.name = 'Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in vector_math_001_1.outputs if output.identifier=='Vector'), None)
+    output = next(
+        (output for output in vector_math_001_1.outputs if output.identifier == 'Vector'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -910,7 +1212,9 @@ def create_mountain_tree():
             output.name = 'Vector'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in vector_math_001_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in vector_math_001_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -929,7 +1233,10 @@ def create_mountain_tree():
 
     colorramp_001_1 = node_tree1.nodes.new('ShaderNodeValToRGB')
     if hasattr(colorramp_001_1, 'color'):
-        colorramp_001_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        colorramp_001_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(colorramp_001_1, 'color_ramp'):
         if hasattr(colorramp_001_1.color_ramp, 'color_mode'):
             colorramp_001_1.color_ramp.color_mode = 'RGB'
@@ -939,7 +1246,8 @@ def create_mountain_tree():
             if hasattr(colorramp_001_1.color_ramp.elements[0], 'alpha'):
                 colorramp_001_1.color_ramp.elements[0].alpha = 1.0
             if hasattr(colorramp_001_1.color_ramp.elements[0], 'color'):
-                colorramp_001_1.color_ramp.elements[0].color = (1.0, 1.0, 1.0, 1.0)
+                colorramp_001_1.color_ramp.elements[0].color = (
+                    1.0, 1.0, 1.0, 1.0)
             if hasattr(colorramp_001_1.color_ramp.elements[0], 'position'):
                 colorramp_001_1.color_ramp.elements[0].position = 0.468181848526001
             if 1 >= len(colorramp_001_1.color_ramp.elements):
@@ -947,7 +1255,8 @@ def create_mountain_tree():
             if hasattr(colorramp_001_1.color_ramp.elements[1], 'alpha'):
                 colorramp_001_1.color_ramp.elements[1].alpha = 1.0
             if hasattr(colorramp_001_1.color_ramp.elements[1], 'color'):
-                colorramp_001_1.color_ramp.elements[1].color = (0.05730096995830536, 0.05730096995830536, 0.05730096995830536, 1.0)
+                colorramp_001_1.color_ramp.elements[1].color = (
+                    0.05730096995830536, 0.05730096995830536, 0.05730096995830536, 1.0)
             if hasattr(colorramp_001_1.color_ramp.elements[1], 'position'):
                 colorramp_001_1.color_ramp.elements[1].position = 0.6454545259475708
         if hasattr(colorramp_001_1.color_ramp, 'hue_interpolation'):
@@ -966,7 +1275,9 @@ def create_mountain_tree():
         colorramp_001_1.use_custom_color = False
     if hasattr(colorramp_001_1, 'width'):
         colorramp_001_1.width = 240.0
-    input_ = next((input_ for input_ in colorramp_001_1.inputs if input_.identifier=='Fac'), None)
+    input_ = next(
+        (input_ for input_ in colorramp_001_1.inputs if input_.identifier == 'Fac'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -982,7 +1293,9 @@ def create_mountain_tree():
             input_.name = 'Fac'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in colorramp_001_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in colorramp_001_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -998,7 +1311,9 @@ def create_mountain_tree():
             output.name = 'Color'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in colorramp_001_1.outputs if output.identifier=='Alpha'), None)
+    output = next(
+        (output for output in colorramp_001_1.outputs if output.identifier == 'Alpha'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1017,7 +1332,10 @@ def create_mountain_tree():
 
     colorramp_002_1 = node_tree1.nodes.new('ShaderNodeValToRGB')
     if hasattr(colorramp_002_1, 'color'):
-        colorramp_002_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        colorramp_002_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(colorramp_002_1, 'color_ramp'):
         if hasattr(colorramp_002_1.color_ramp, 'color_mode'):
             colorramp_002_1.color_ramp.color_mode = 'RGB'
@@ -1027,7 +1345,8 @@ def create_mountain_tree():
             if hasattr(colorramp_002_1.color_ramp.elements[0], 'alpha'):
                 colorramp_002_1.color_ramp.elements[0].alpha = 1.0
             if hasattr(colorramp_002_1.color_ramp.elements[0], 'color'):
-                colorramp_002_1.color_ramp.elements[0].color = (1.0, 1.0, 1.0, 1.0)
+                colorramp_002_1.color_ramp.elements[0].color = (
+                    1.0, 1.0, 1.0, 1.0)
             if hasattr(colorramp_002_1.color_ramp.elements[0], 'position'):
                 colorramp_002_1.color_ramp.elements[0].position = 0.0
             if 1 >= len(colorramp_002_1.color_ramp.elements):
@@ -1035,7 +1354,8 @@ def create_mountain_tree():
             if hasattr(colorramp_002_1.color_ramp.elements[1], 'alpha'):
                 colorramp_002_1.color_ramp.elements[1].alpha = 1.0
             if hasattr(colorramp_002_1.color_ramp.elements[1], 'color'):
-                colorramp_002_1.color_ramp.elements[1].color = (0.0, 0.0, 0.0, 1.0)
+                colorramp_002_1.color_ramp.elements[1].color = (
+                    0.0, 0.0, 0.0, 1.0)
             if hasattr(colorramp_002_1.color_ramp.elements[1], 'position'):
                 colorramp_002_1.color_ramp.elements[1].position = 1.0
         if hasattr(colorramp_002_1.color_ramp, 'hue_interpolation'):
@@ -1054,7 +1374,9 @@ def create_mountain_tree():
         colorramp_002_1.use_custom_color = False
     if hasattr(colorramp_002_1, 'width'):
         colorramp_002_1.width = 240.0
-    input_ = next((input_ for input_ in colorramp_002_1.inputs if input_.identifier=='Fac'), None)
+    input_ = next(
+        (input_ for input_ in colorramp_002_1.inputs if input_.identifier == 'Fac'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1070,7 +1392,9 @@ def create_mountain_tree():
             input_.name = 'Fac'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in colorramp_002_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in colorramp_002_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -1086,7 +1410,9 @@ def create_mountain_tree():
             output.name = 'Color'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in colorramp_002_1.outputs if output.identifier=='Alpha'), None)
+    output = next(
+        (output for output in colorramp_002_1.outputs if output.identifier == 'Alpha'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1105,7 +1431,10 @@ def create_mountain_tree():
 
     math_006_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_006_1, 'color'):
-        math_006_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_006_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_006_1, 'hide'):
         math_006_1.hide = False
     if hasattr(math_006_1, 'location'):
@@ -1122,7 +1451,9 @@ def create_mountain_tree():
         math_006_1.use_custom_color = False
     if hasattr(math_006_1, 'width'):
         math_006_1.width = 140.0
-    input_ = next((input_ for input_ in math_006_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_006_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1138,10 +1469,12 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_006_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_006_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
-            input_.default_value = 10.0
+            input_.default_value = randint(0, 9) + 1
         if hasattr(input_, 'display_shape'):
             input_.display_shape = 'DIAMOND_DOT'
         if hasattr(input_, 'enabled'):
@@ -1154,7 +1487,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_006_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_006_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1170,7 +1505,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_006_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_006_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1189,7 +1526,10 @@ def create_mountain_tree():
 
     math_004_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_004_1, 'color'):
-        math_004_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_004_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_004_1, 'hide'):
         math_004_1.hide = False
     if hasattr(math_004_1, 'location'):
@@ -1206,7 +1546,9 @@ def create_mountain_tree():
         math_004_1.use_custom_color = False
     if hasattr(math_004_1, 'width'):
         math_004_1.width = 140.0
-    input_ = next((input_ for input_ in math_004_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_004_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1222,7 +1564,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_004_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_004_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 10.0
@@ -1238,7 +1582,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_004_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_004_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1254,7 +1600,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_004_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_004_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1275,7 +1623,10 @@ def create_mountain_tree():
     if hasattr(wave_texture_1, 'bands_direction'):
         wave_texture_1.bands_direction = 'X'
     if hasattr(wave_texture_1, 'color'):
-        wave_texture_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        wave_texture_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(wave_texture_1, 'hide'):
         wave_texture_1.hide = False
     if hasattr(wave_texture_1, 'location'):
@@ -1294,7 +1645,9 @@ def create_mountain_tree():
         wave_texture_1.wave_type = 'BANDS'
     if hasattr(wave_texture_1, 'width'):
         wave_texture_1.width = 150.0
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -1310,7 +1663,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Scale'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.00800000037997961
@@ -1326,7 +1681,9 @@ def create_mountain_tree():
             input_.name = 'Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Distortion'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Distortion'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 14.0
@@ -1342,7 +1699,9 @@ def create_mountain_tree():
             input_.name = 'Distortion'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Detail'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Detail'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 10.0
@@ -1358,7 +1717,9 @@ def create_mountain_tree():
             input_.name = 'Detail'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Detail Scale'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Detail Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 1.0
@@ -1374,7 +1735,10 @@ def create_mountain_tree():
             input_.name = 'Detail Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Detail Roughness'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier ==
+         'Detail Roughness'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1390,7 +1754,9 @@ def create_mountain_tree():
             input_.name = 'Detail Roughness'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in wave_texture_1.inputs if input_.identifier=='Phase Offset'), None)
+    input_ = next(
+        (input_ for input_ in wave_texture_1.inputs if input_.identifier == 'Phase Offset'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 10.0
@@ -1406,7 +1772,9 @@ def create_mountain_tree():
             input_.name = 'Phase Offset'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in wave_texture_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in wave_texture_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -1422,7 +1790,9 @@ def create_mountain_tree():
             output.name = 'Color'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in wave_texture_1.outputs if output.identifier=='Fac'), None)
+    output = next(
+        (output for output in wave_texture_1.outputs if output.identifier == 'Fac'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1441,7 +1811,10 @@ def create_mountain_tree():
 
     math_005_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_005_1, 'color'):
-        math_005_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_005_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_005_1, 'hide'):
         math_005_1.hide = False
     if hasattr(math_005_1, 'location'):
@@ -1458,7 +1831,9 @@ def create_mountain_tree():
         math_005_1.use_custom_color = False
     if hasattr(math_005_1, 'width'):
         math_005_1.width = 140.0
-    input_ = next((input_ for input_ in math_005_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_005_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1474,7 +1849,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_005_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_005_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1490,7 +1867,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_005_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_005_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1506,7 +1885,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_005_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_005_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1525,7 +1906,10 @@ def create_mountain_tree():
 
     math_007_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_007_1, 'color'):
-        math_007_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_007_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_007_1, 'hide'):
         math_007_1.hide = False
     if hasattr(math_007_1, 'location'):
@@ -1542,7 +1926,9 @@ def create_mountain_tree():
         math_007_1.use_custom_color = False
     if hasattr(math_007_1, 'width'):
         math_007_1.width = 140.0
-    input_ = next((input_ for input_ in math_007_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_007_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1558,7 +1944,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_007_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_007_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1574,7 +1962,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_007_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_007_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1590,7 +1980,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_007_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_007_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1609,7 +2001,10 @@ def create_mountain_tree():
 
     math_008_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_008_1, 'color'):
-        math_008_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_008_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_008_1, 'hide'):
         math_008_1.hide = False
     if hasattr(math_008_1, 'location'):
@@ -1626,7 +2021,9 @@ def create_mountain_tree():
         math_008_1.use_custom_color = False
     if hasattr(math_008_1, 'width'):
         math_008_1.width = 140.0
-    input_ = next((input_ for input_ in math_008_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_008_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -1642,7 +2039,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_008_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_008_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 5.0
@@ -1658,7 +2057,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_008_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_008_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1674,7 +2075,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_008_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_008_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1693,7 +2096,10 @@ def create_mountain_tree():
 
     combine_xyz_1 = node_tree1.nodes.new('ShaderNodeCombineXYZ')
     if hasattr(combine_xyz_1, 'color'):
-        combine_xyz_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        combine_xyz_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(combine_xyz_1, 'hide'):
         combine_xyz_1.hide = False
     if hasattr(combine_xyz_1, 'location'):
@@ -1706,7 +2112,9 @@ def create_mountain_tree():
         combine_xyz_1.use_custom_color = False
     if hasattr(combine_xyz_1, 'width'):
         combine_xyz_1.width = 140.0
-    input_ = next((input_ for input_ in combine_xyz_1.inputs if input_.identifier=='X'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_1.inputs if input_.identifier == 'X'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1722,7 +2130,9 @@ def create_mountain_tree():
             input_.name = 'X'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in combine_xyz_1.inputs if input_.identifier=='Y'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_1.inputs if input_.identifier == 'Y'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1738,7 +2148,9 @@ def create_mountain_tree():
             input_.name = 'Y'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in combine_xyz_1.inputs if input_.identifier=='Z'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_1.inputs if input_.identifier == 'Z'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -1754,7 +2166,9 @@ def create_mountain_tree():
             input_.name = 'Z'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in combine_xyz_1.outputs if output.identifier=='Vector'), None)
+    output = next(
+        (output for output in combine_xyz_1.outputs if output.identifier == 'Vector'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -1773,7 +2187,10 @@ def create_mountain_tree():
 
     set_position_1 = node_tree1.nodes.new('GeometryNodeSetPosition')
     if hasattr(set_position_1, 'color'):
-        set_position_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        set_position_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(set_position_1, 'hide'):
         set_position_1.hide = False
     if hasattr(set_position_1, 'location'):
@@ -1786,7 +2203,9 @@ def create_mountain_tree():
         set_position_1.use_custom_color = False
     if hasattr(set_position_1, 'width'):
         set_position_1.width = 138.1842041015625
-    input_ = next((input_ for input_ in set_position_1.inputs if input_.identifier=='Selection'), None)
+    input_ = next(
+        (input_ for input_ in set_position_1.inputs if input_.identifier == 'Selection'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = True
@@ -1802,7 +2221,9 @@ def create_mountain_tree():
             input_.name = 'Selection'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in set_position_1.inputs if input_.identifier=='Position'), None)
+    input_ = next(
+        (input_ for input_ in set_position_1.inputs if input_.identifier == 'Position'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -1818,7 +2239,9 @@ def create_mountain_tree():
             input_.name = 'Position'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in set_position_1.inputs if input_.identifier=='Offset'), None)
+    input_ = next(
+        (input_ for input_ in set_position_1.inputs if input_.identifier == 'Offset'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -1837,7 +2260,10 @@ def create_mountain_tree():
 
     position_002_1 = node_tree1.nodes.new('GeometryNodeInputPosition')
     if hasattr(position_002_1, 'color'):
-        position_002_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        position_002_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(position_002_1, 'hide'):
         position_002_1.hide = False
     if hasattr(position_002_1, 'location'):
@@ -1850,7 +2276,9 @@ def create_mountain_tree():
         position_002_1.use_custom_color = False
     if hasattr(position_002_1, 'width'):
         position_002_1.width = 100.0
-    output = next((output for output in position_002_1.outputs if output.identifier=='Position'), None)
+    output = next(
+        (output for output in position_002_1.outputs if output.identifier == 'Position'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -1869,7 +2297,10 @@ def create_mountain_tree():
 
     gradient_texture_1 = node_tree1.nodes.new('ShaderNodeTexGradient')
     if hasattr(gradient_texture_1, 'color'):
-        gradient_texture_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        gradient_texture_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(gradient_texture_1, 'gradient_type'):
         gradient_texture_1.gradient_type = 'SPHERICAL'
     if hasattr(gradient_texture_1, 'hide'):
@@ -1884,7 +2315,9 @@ def create_mountain_tree():
         gradient_texture_1.use_custom_color = False
     if hasattr(gradient_texture_1, 'width'):
         gradient_texture_1.width = 140.0
-    input_ = next((input_ for input_ in gradient_texture_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in gradient_texture_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -1900,7 +2333,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in gradient_texture_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in gradient_texture_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -1916,7 +2351,9 @@ def create_mountain_tree():
             output.name = 'Color'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in gradient_texture_1.outputs if output.identifier=='Fac'), None)
+    output = next(
+        (output for output in gradient_texture_1.outputs if output.identifier == 'Fac'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -1935,7 +2372,10 @@ def create_mountain_tree():
 
     position_001_1 = node_tree1.nodes.new('GeometryNodeInputPosition')
     if hasattr(position_001_1, 'color'):
-        position_001_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        position_001_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(position_001_1, 'hide'):
         position_001_1.hide = False
     if hasattr(position_001_1, 'location'):
@@ -1948,7 +2388,9 @@ def create_mountain_tree():
         position_001_1.use_custom_color = False
     if hasattr(position_001_1, 'width'):
         position_001_1.width = 140.0
-    output = next((output for output in position_001_1.outputs if output.identifier=='Position'), None)
+    output = next(
+        (output for output in position_001_1.outputs if output.identifier == 'Position'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -1967,7 +2409,10 @@ def create_mountain_tree():
 
     vector_math_1 = node_tree1.nodes.new('ShaderNodeVectorMath')
     if hasattr(vector_math_1, 'color'):
-        vector_math_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        vector_math_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(vector_math_1, 'hide'):
         vector_math_1.hide = False
     if hasattr(vector_math_1, 'location'):
@@ -1982,7 +2427,9 @@ def create_mountain_tree():
         vector_math_1.use_custom_color = False
     if hasattr(vector_math_1, 'width'):
         vector_math_1.width = 140.0
-    input_ = next((input_ for input_ in vector_math_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -1998,7 +2445,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_1.inputs if input_.identifier=='Vector_001'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_1.inputs if input_.identifier == 'Vector_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2014,7 +2463,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_1.inputs if input_.identifier=='Vector_002'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_1.inputs if input_.identifier == 'Vector_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2030,7 +2481,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_1.inputs if input_.identifier=='Scale'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_1.inputs if input_.identifier == 'Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 1.0
@@ -2046,7 +2499,9 @@ def create_mountain_tree():
             input_.name = 'Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in vector_math_1.outputs if output.identifier=='Vector'), None)
+    output = next(
+        (output for output in vector_math_1.outputs if output.identifier == 'Vector'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -2062,7 +2517,9 @@ def create_mountain_tree():
             output.name = 'Vector'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in vector_math_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in vector_math_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -2081,7 +2538,10 @@ def create_mountain_tree():
 
     combine_xyz_001_1 = node_tree1.nodes.new('ShaderNodeCombineXYZ')
     if hasattr(combine_xyz_001_1, 'color'):
-        combine_xyz_001_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        combine_xyz_001_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(combine_xyz_001_1, 'hide'):
         combine_xyz_001_1.hide = False
     if hasattr(combine_xyz_001_1, 'location'):
@@ -2094,7 +2554,9 @@ def create_mountain_tree():
         combine_xyz_001_1.use_custom_color = False
     if hasattr(combine_xyz_001_1, 'width'):
         combine_xyz_001_1.width = 140.0
-    input_ = next((input_ for input_ in combine_xyz_001_1.inputs if input_.identifier=='X'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_001_1.inputs if input_.identifier == 'X'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -2110,7 +2572,9 @@ def create_mountain_tree():
             input_.name = 'X'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in combine_xyz_001_1.inputs if input_.identifier=='Y'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_001_1.inputs if input_.identifier == 'Y'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -2126,7 +2590,9 @@ def create_mountain_tree():
             input_.name = 'Y'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in combine_xyz_001_1.inputs if input_.identifier=='Z'), None)
+    input_ = next(
+        (input_ for input_ in combine_xyz_001_1.inputs if input_.identifier == 'Z'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -2142,7 +2608,9 @@ def create_mountain_tree():
             input_.name = 'Z'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in combine_xyz_001_1.outputs if output.identifier=='Vector'), None)
+    output = next(
+        (output for output in combine_xyz_001_1.outputs if output.identifier == 'Vector'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -2161,7 +2629,10 @@ def create_mountain_tree():
 
     vector_math_002_1 = node_tree1.nodes.new('ShaderNodeVectorMath')
     if hasattr(vector_math_002_1, 'color'):
-        vector_math_002_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        vector_math_002_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(vector_math_002_1, 'hide'):
         vector_math_002_1.hide = False
     if hasattr(vector_math_002_1, 'location'):
@@ -2176,7 +2647,9 @@ def create_mountain_tree():
         vector_math_002_1.use_custom_color = False
     if hasattr(vector_math_002_1, 'width'):
         vector_math_002_1.width = 140.0
-    input_ = next((input_ for input_ in vector_math_002_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_002_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2192,7 +2665,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_002_1.inputs if input_.identifier=='Vector_001'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_002_1.inputs if input_.identifier == 'Vector_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2208,7 +2683,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_002_1.inputs if input_.identifier=='Vector_002'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_002_1.inputs if input_.identifier == 'Vector_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2224,7 +2701,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in vector_math_002_1.inputs if input_.identifier=='Scale'), None)
+    input_ = next(
+        (input_ for input_ in vector_math_002_1.inputs if input_.identifier == 'Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 1.0
@@ -2240,7 +2719,9 @@ def create_mountain_tree():
             input_.name = 'Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in vector_math_002_1.outputs if output.identifier=='Vector'), None)
+    output = next(
+        (output for output in vector_math_002_1.outputs if output.identifier == 'Vector'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0)
@@ -2256,7 +2737,9 @@ def create_mountain_tree():
             output.name = 'Vector'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in vector_math_002_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in vector_math_002_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -2275,7 +2758,10 @@ def create_mountain_tree():
 
     value_1 = node_tree1.nodes.new('ShaderNodeValue')
     if hasattr(value_1, 'color'):
-        value_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        value_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(value_1, 'hide'):
         value_1.hide = False
     if hasattr(value_1, 'location'):
@@ -2288,7 +2774,9 @@ def create_mountain_tree():
         value_1.use_custom_color = False
     if hasattr(value_1, 'width'):
         value_1.width = 140.0
-    output = next((output for output in value_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in value_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 30.12345
@@ -2307,7 +2795,10 @@ def create_mountain_tree():
 
     math_003_1 = node_tree1.nodes.new('ShaderNodeMath')
     if hasattr(math_003_1, 'color'):
-        math_003_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        math_003_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(math_003_1, 'hide'):
         math_003_1.hide = False
     if hasattr(math_003_1, 'location'):
@@ -2324,7 +2815,9 @@ def create_mountain_tree():
         math_003_1.use_custom_color = False
     if hasattr(math_003_1, 'width'):
         math_003_1.width = 140.0
-    input_ = next((input_ for input_ in math_003_1.inputs if input_.identifier=='Value'), None)
+    input_ = next(
+        (input_ for input_ in math_003_1.inputs if input_.identifier == 'Value'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.5
@@ -2340,7 +2833,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_003_1.inputs if input_.identifier=='Value_001'), None)
+    input_ = next(
+        (input_ for input_ in math_003_1.inputs if input_.identifier == 'Value_001'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 100000.0
@@ -2356,7 +2851,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in math_003_1.inputs if input_.identifier=='Value_002'), None)
+    input_ = next(
+        (input_ for input_ in math_003_1.inputs if input_.identifier == 'Value_002'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 10000.0
@@ -2372,7 +2869,9 @@ def create_mountain_tree():
             input_.name = 'Value'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in math_003_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in math_003_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -2391,7 +2890,10 @@ def create_mountain_tree():
 
     group_input_1 = node_tree1.nodes.new('NodeGroupInput')
     if hasattr(group_input_1, 'color'):
-        group_input_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        group_input_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(group_input_1, 'hide'):
         group_input_1.hide = False
     if hasattr(group_input_1, 'location'):
@@ -2407,7 +2909,10 @@ def create_mountain_tree():
 
     value_001_1 = node_tree1.nodes.new('ShaderNodeValue')
     if hasattr(value_001_1, 'color'):
-        value_001_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        value_001_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(value_001_1, 'hide'):
         value_001_1.hide = False
     if hasattr(value_001_1, 'location'):
@@ -2420,10 +2925,12 @@ def create_mountain_tree():
         value_001_1.use_custom_color = False
     if hasattr(value_001_1, 'width'):
         value_001_1.width = 140.0
-    output = next((output for output in value_001_1.outputs if output.identifier=='Value'), None)
+    output = next(
+        (output for output in value_001_1.outputs if output.identifier == 'Value'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
-            output.default_value = uniform(0,10.12345)
+            output.default_value = uniform(0, 10.12345)
         if hasattr(output, 'display_shape'):
             output.display_shape = 'CIRCLE'
         if hasattr(output, 'enabled'):
@@ -2439,7 +2946,10 @@ def create_mountain_tree():
 
     noise_texture_1 = node_tree1.nodes.new('ShaderNodeTexNoise')
     if hasattr(noise_texture_1, 'color'):
-        noise_texture_1.color = (0.6079999804496765, 0.6079999804496765, 0.6079999804496765)
+        noise_texture_1.color = (
+            0.6079999804496765,
+            0.6079999804496765,
+            0.6079999804496765)
     if hasattr(noise_texture_1, 'hide'):
         noise_texture_1.hide = False
     if hasattr(noise_texture_1, 'location'):
@@ -2454,7 +2964,9 @@ def create_mountain_tree():
         noise_texture_1.use_custom_color = False
     if hasattr(noise_texture_1, 'width'):
         noise_texture_1.width = 140.0
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='Vector'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'Vector'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = (0.0, 0.0, 0.0)
@@ -2470,7 +2982,9 @@ def create_mountain_tree():
             input_.name = 'Vector'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='W'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'W'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -2486,7 +3000,9 @@ def create_mountain_tree():
             input_.name = 'W'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='Scale'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'Scale'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.03999999910593033
@@ -2502,7 +3018,9 @@ def create_mountain_tree():
             input_.name = 'Scale'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='Detail'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'Detail'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 10.0
@@ -2518,7 +3036,9 @@ def create_mountain_tree():
             input_.name = 'Detail'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='Roughness'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'Roughness'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.4000000059604645
@@ -2534,7 +3054,9 @@ def create_mountain_tree():
             input_.name = 'Roughness'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    input_ = next((input_ for input_ in noise_texture_1.inputs if input_.identifier=='Distortion'), None)
+    input_ = next(
+        (input_ for input_ in noise_texture_1.inputs if input_.identifier == 'Distortion'),
+        None)
     if input_:
         if hasattr(input_, 'default_value'):
             input_.default_value = 0.0
@@ -2550,7 +3072,9 @@ def create_mountain_tree():
             input_.name = 'Distortion'
         if hasattr(input_, 'show_expanded'):
             input_.show_expanded = False
-    output = next((output for output in noise_texture_1.outputs if output.identifier=='Fac'), None)
+    output = next(
+        (output for output in noise_texture_1.outputs if output.identifier == 'Fac'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = 0.0
@@ -2566,7 +3090,9 @@ def create_mountain_tree():
             output.name = 'Fac'
         if hasattr(output, 'show_expanded'):
             output.show_expanded = False
-    output = next((output for output in noise_texture_1.outputs if output.identifier=='Color'), None)
+    output = next(
+        (output for output in noise_texture_1.outputs if output.identifier == 'Color'),
+        None)
     if output:
         if hasattr(output, 'default_value'):
             output.default_value = (0.0, 0.0, 0.0, 0.0)
@@ -2595,9 +3121,15 @@ def create_mountain_tree():
     node_tree1.links.new(math_003_1.outputs[0], combine_xyz_001_1.inputs[2])
     node_tree1.links.new(math_003_1.outputs[0], math_1.inputs[0])
     node_tree1.links.new(math_003_1.outputs[0], math_002_1.inputs[0])
-    node_tree1.links.new(position_002_1.outputs[0], vector_math_001_1.inputs[0])
-    node_tree1.links.new(vector_math_001_1.outputs[0], gradient_texture_1.inputs[0])
-    node_tree1.links.new(gradient_texture_1.outputs[0], colorramp_001_1.inputs[0])
+    node_tree1.links.new(
+        position_002_1.outputs[0],
+        vector_math_001_1.inputs[0])
+    node_tree1.links.new(
+        vector_math_001_1.outputs[0],
+        gradient_texture_1.inputs[0])
+    node_tree1.links.new(
+        gradient_texture_1.outputs[0],
+        colorramp_001_1.inputs[0])
     node_tree1.links.new(colorramp_001_1.outputs[0], math_004_1.inputs[0])
     node_tree1.links.new(math_004_1.outputs[0], math_005_1.inputs[1])
     node_tree1.links.new(combine_xyz_1.outputs[0], set_position_1.inputs[3])
@@ -2608,26 +3140,35 @@ def create_mountain_tree():
     node_tree1.links.new(wave_texture_1.outputs[0], colorramp_002_1.inputs[0])
     node_tree1.links.new(math_007_1.outputs[0], math_008_1.inputs[0])
     node_tree1.links.new(math_008_1.outputs[0], combine_xyz_1.inputs[2])
-    node_tree1.links.new(position_001_1.outputs[0], vector_math_002_1.inputs[0])
-    node_tree1.links.new(vector_math_002_1.outputs[0], wave_texture_1.inputs[0])
-    node_tree1.links.new(combine_xyz_001_1.outputs[0], vector_math_002_1.inputs[1])
+    node_tree1.links.new(
+        position_001_1.outputs[0],
+        vector_math_002_1.inputs[0])
+    node_tree1.links.new(
+        vector_math_002_1.outputs[0],
+        wave_texture_1.inputs[0])
+    node_tree1.links.new(
+        combine_xyz_001_1.outputs[0],
+        vector_math_002_1.inputs[1])
     node_tree1.links.new(value_1.outputs[0], subdivide_mesh_1.inputs[1])
     node_tree1.links.new(group_input_1.outputs[0], subdivide_mesh_1.inputs[0])
     node_tree1.links.new(set_position_1.outputs[0], group_output_1.inputs[0])
     node_tree1.links.new(value_001_1.outputs[0], math_003_1.inputs[0])
 
-if __name__ == "__main__":  
-    start_checkpoint = time.time()
+
+if __name__ == "__main__":
+    start_checkpoint = time()
     run_ops_without_view_layer_update(main)
     if RENDER:
         print("Rendering...")
-        checkpoint = time.time()
-        bpy.context.scene.render.filepath = "/Users/kewing/Desktop/sp22/anim/blender/city/output/o" + sys.argv[7]
+        checkpoint = time()
+
+        working_dir = getcwd()
+        bpy.context.scene.render.filepath = (working_dir + "/output/output_" + argv[7])
         bpy.context.scene.cycles.samples = int(256 * RENDER_SAMPLE_FACTOR)
         bpy.context.scene.render.resolution_x = 3840 * RENDER_SIZE_FACTOR
         bpy.context.scene.render.resolution_y = 1644 * RENDER_SIZE_FACTOR
+        bpy.context.scene.cycles.device = 'GPU'
         bpy.ops.render.render('INVOKE_DEFAULT', write_still=True)
-        print("--- %s seconds ---\n" % (time.time() - checkpoint))
-        print("Total Time: --- %s seconds ---\n"% (time.time() - start_checkpoint))
 
-
+        print("--- %s seconds ---\n" % (time() - checkpoint))
+        print("Total Time: %s seconds \n" % (time() - start_checkpoint))
